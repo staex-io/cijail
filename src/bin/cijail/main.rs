@@ -1,4 +1,3 @@
-use std::env::args_os;
 use std::ffi::c_int;
 use std::ffi::OsString;
 use std::os::fd::AsRawFd;
@@ -10,6 +9,7 @@ use std::process::ExitCode;
 use caps::errors::CapsError;
 use caps::CapSet;
 use caps::Capability;
+use clap::Parser;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpFd;
 use libseccomp::ScmpNotifReq;
@@ -21,14 +21,20 @@ use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
 mod error;
+mod socket;
+mod tracer;
+mod allowed_endpoints;
+mod logger;
 
 use crate::error::*;
+use crate::allowed_endpoints::*;
+use crate::logger::*;
 
 fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     use libseccomp::*;
     let mut filter = ScmpFilterContext::new_filter(ScmpAction::Allow)?;
     filter.add_arch(ScmpArch::native())?;
-    for name in ["connect", "sendto", "sendmsg", "sendmmsg", "close"] {
+    for name in ["connect", "sendto", "sendmsg", "sendmmsg"] {
         filter.add_rule(ScmpAction::Notify, ScmpSyscall::from_name(name)?)?;
     }
     filter.load()?;
@@ -45,11 +51,14 @@ fn drop_capabilities() -> Result<(), CapsError> {
     Ok(())
 }
 
-fn spawn_target_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::error::Error>> {
-    let arg0 = args_os()
-        .nth(1)
-        .ok_or_else(|| format!("please specify the command to run"))?;
-    let args = args_os().skip(2).collect::<Vec<OsString>>();
+fn spawn_target_process(
+    socket: SocketpairStream,
+    mut args: Vec<OsString>,
+) -> Result<Child, Box<dyn std::error::Error>> {
+    if args.is_empty() {
+        return Err(format!("please specify the command to run").into());
+    }
+    let arg0 = args.remove(0);
     let mut child = Command::new(arg0.clone());
     child.args(args.clone());
     unsafe {
@@ -85,8 +94,9 @@ fn spawn_target_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::
 }
 
 fn spawn_tracer_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::error::Error>> {
-    let arg0 = "./target/debug/cijail-tracer";
-    let mut child = Command::new(arg0);
+    let arg0 = std::env::args_os().next().unwrap();
+    let mut child = Command::new(arg0.clone());
+    child.env("CIJAIL_TRACER", "1");
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -99,22 +109,50 @@ fn spawn_tracer_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::
     };
     let child = child
         .spawn()
-        .map_err(move |e| format!("failed to run `{}`: {}", arg0, e))?;
+        .map_err(move |e| format!("failed to run `{}`: {}", arg0.to_string_lossy(), e))?;
     Ok(child)
 }
 
+#[derive(Parser)]
+#[command(
+    about = "CI/CD pipeline process jail that filters outgoing network traffic.",
+    long_about = None,
+    arg_required_else_help = true,
+    trailing_var_arg = true
+)]
+struct Args {
+    /// Print version.
+    #[clap(long, action)]
+    version: bool,
+    /// Command to run.
+    #[arg(allow_hyphen_values = true)]
+    command: Vec<OsString>,
+}
+
 fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
+    Logger::init().map_err(|_| "failed to set logger")?;
+    if std::env::var_os("CIJAIL_TRACER").is_some() {
+        return tracer::main(0);
+    }
+    let args = Args::parse();
+    if args.version {
+        let version = env!("CIJAIL_VERSION");
+        println!("{}", version);
+        return Ok(ExitCode::SUCCESS);
+    }
     let (socket0, socket1) = socketpair_stream()?;
-    let mut target = spawn_target_process(socket0)?;
+    let mut target = spawn_target_process(socket0, args.command)?;
     let mut tracer = spawn_tracer_process(socket1)?;
     let status = target.wait()?;
-    eprintln!("target finished {:?}", status);
-    Command::new("kill")
-        .args([tracer.id().to_string()])
-        .status()
-        .unwrap();
+    tracer.kill()?;
     tracer.wait()?;
-    Ok(ExitCode::SUCCESS)
+    Ok(match status.code() {
+        Some(code) => (code as u8).into(),
+        None => {
+            eprintln!("terminated by signal");
+            ExitCode::FAILURE
+        }
+    })
 }
 
 fn check(ret: c_int) -> Result<c_int, std::io::Error> {

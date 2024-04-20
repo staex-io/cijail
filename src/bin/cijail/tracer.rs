@@ -11,15 +11,21 @@ use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
+use log::info;
 use nix::sys::uio::process_vm_readv;
 use nix::sys::uio::RemoteIoVec;
 use nix::unistd::Pid;
 use os_socketaddr::OsSocketAddr;
 
-mod socket;
+use crate::socket;
+use crate::AllowedEndpoints;
 
-fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let notify_fd: RawFd = 0;
+pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let allowed_endpoints: AllowedEndpoints = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS")
+    {
+        Ok(string) => string.parse()?,
+        Err(_) => Default::default(),
+    };
     loop {
         let request = ScmpNotifReq::receive(notify_fd)?;
         notify_id_valid(notify_fd, request.id)?;
@@ -55,11 +61,18 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
             }
             _ => Vec::new(),
         };
-        let response = if socket_addresses.is_empty() {
+        let response = if socket_addresses.is_empty()
+            || allowed_endpoints.contain_any(socket_addresses.as_slice())
+        {
             ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
         } else {
-            eprintln!(
-                "{}{}",
+            let error = -1; // permission denied
+            ScmpNotifResp::new_error(request.id, error, ScmpNotifRespFlags::empty())
+        };
+        if !socket_addresses.is_empty() {
+            info!(
+                "{} {}{}",
+                if response.error == 0 { "allow" } else { "deny" },
                 syscall,
                 socket_addresses
                     .iter()
@@ -68,8 +81,7 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
                         acc
                     })
             );
-            ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
-        };
+        }
         response.respond(notify_fd)?;
     }
 }
