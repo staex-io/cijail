@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::io::stderr;
 
 use chrono::Local;
 use log::LevelFilter;
@@ -32,7 +33,10 @@ impl Log for Logger {
         eprintln!("{}", buffer);
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        use std::io::Write;
+        let _ = stderr().flush();
+    }
 }
 
 static LOGGER: Logger = Logger;

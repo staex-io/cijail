@@ -2,6 +2,7 @@
 name = "cijail"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 caps = { version = "0.5.5", features = [], default-features = false }
@@ -16,6 +17,11 @@ passfd = { version = "0.1.6", features = [], default-features = false }
 prctl = { version = "1.0.0", features = [], default-features = false }
 socketpair = { version = "0.19.5", features = [], default-features = false }
 thiserror = { version = "1.0.58", features = [], default-features = false }
+
+[dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+rand = "0.8.5"
 
 [build-dependencies]
 bindgen = { version = "0.69.4", features = [], default-features = false }

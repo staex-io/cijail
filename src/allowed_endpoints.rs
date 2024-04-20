@@ -1,6 +1,8 @@
 use std::collections::HashSet;
-use std::net::AddrParseError;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::str::FromStr;
 
 use log::error;
@@ -37,10 +39,31 @@ impl Default for AllowedEndpoints {
 }
 
 impl FromStr for AllowedEndpoints {
-    type Err = AddrParseError;
+    type Err = std::io::Error;
     fn from_str(other: &str) -> Result<Self, Self::Err> {
         let mut allowed_endpoints = AllowedEndpoints::new();
-        for word in other.trim().split_whitespace() {
+        for word in other.split_whitespace() {
+            // with DNS name resolution
+            let socketaddrs = match word.to_socket_addrs() {
+                Ok(addr) => addr,
+                Err(e) => {
+                    error!("failed to parse `{}` as socket address: {}", word, e);
+                    continue;
+                }
+            };
+            allowed_endpoints
+                .socketaddrs
+                .extend(socketaddrs.into_iter());
+        }
+        Ok(allowed_endpoints)
+    }
+}
+
+impl From<&str> for AllowedEndpoints {
+    fn from(other: &str) -> Self {
+        let mut allowed_endpoints = AllowedEndpoints::new();
+        for word in other.split_whitespace() {
+            // no DNS name resolution
             let socketaddr = match word.parse() {
                 Ok(addr) => addr,
                 Err(e) => {
@@ -50,6 +73,18 @@ impl FromStr for AllowedEndpoints {
             };
             allowed_endpoints.socketaddrs.insert(socketaddr);
         }
-        Ok(allowed_endpoints)
+        allowed_endpoints
+    }
+}
+
+impl Display for AllowedEndpoints {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(addr) = self.socketaddrs.iter().next() {
+            write!(f, "{}", addr)?;
+        }
+        for addr in self.socketaddrs.iter().skip(1) {
+            write!(f, " {}", addr)?;
+        }
+        Ok(())
     }
 }

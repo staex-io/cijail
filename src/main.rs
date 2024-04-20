@@ -10,6 +10,7 @@ use caps::errors::CapsError;
 use caps::CapSet;
 use caps::Capability;
 use clap::Parser;
+use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpFd;
 use libseccomp::ScmpNotifReq;
@@ -20,15 +21,23 @@ use prctl::set_no_new_privileges;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
-mod error;
-mod socket;
-mod tracer;
-mod allowed_endpoints;
-mod logger;
+use crate::AllowedEndpoints;
+use crate::Error;
+use crate::Logger;
 
-use crate::error::*;
-use crate::allowed_endpoints::*;
-use crate::logger::*;
+pub(crate) mod allowed_dns_names;
+pub(crate) mod allowed_endpoints;
+pub(crate) mod dns_packet;
+pub(crate) mod error;
+pub(crate) mod logger;
+pub(crate) mod socket;
+pub(crate) mod tracer;
+
+pub(crate) use self::allowed_dns_names::*;
+pub(crate) use self::allowed_endpoints::*;
+pub(crate) use self::dns_packet::*;
+pub(crate) use self::error::*;
+pub(crate) use self::logger::*;
 
 fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     use libseccomp::*;
@@ -51,12 +60,12 @@ fn drop_capabilities() -> Result<(), CapsError> {
     Ok(())
 }
 
-fn spawn_target_process(
+fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     if args.is_empty() {
-        return Err(format!("please specify the command to run").into());
+        return Err("please specify the command to run".into());
     }
     let arg0 = args.remove(0);
     let mut child = Command::new(arg0.clone());
@@ -68,15 +77,19 @@ fn spawn_target_process(
             set_no_new_privileges(true).map_err(Error::to_io_error)?;
             let notify_fd = install_seccomp_notify_filter()?;
             // allow the first `sendmsg` call
-            let tmp_thread = std::thread::spawn(move || {
-                let request = ScmpNotifReq::receive(notify_fd).unwrap();
-                notify_id_valid(notify_fd, request.id).unwrap();
+            let tmp_thread = std::thread::spawn(move || -> Result<(), SeccompError> {
+                let request = ScmpNotifReq::receive(notify_fd)?;
+                notify_id_valid(notify_fd, request.id)?;
                 let response = ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty());
-                response.respond(notify_fd).unwrap();
+                response.respond(notify_fd)?;
+                Ok(())
             });
             // this is the first `sendmsg` call that we allow via the temporary thread above
             socket.send_fd(notify_fd)?;
-            tmp_thread.join().unwrap();
+            tmp_thread
+                .join()
+                .map_err(|_| Error::map("failed to join thread"))?
+                .map_err(Error::Seccomp)?;
             // file descriptors seem to close automatically
             Ok(())
         })
@@ -93,10 +106,16 @@ fn spawn_target_process(
     Ok(child)
 }
 
-fn spawn_tracer_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::error::Error>> {
-    let arg0 = std::env::args_os().next().unwrap();
+fn spawn_tracer_process(
+    socket: SocketpairStream,
+    allowed_endpoints: AllowedEndpoints,
+) -> Result<Child, Box<dyn std::error::Error>> {
+    let arg0 = std::env::args_os()
+        .next()
+        .ok_or_else(|| Error::map("can not find zeroth argument"))?;
     let mut child = Command::new(arg0.clone());
     child.env("CIJAIL_TRACER", "1");
+    child.env("CIJAIL_ALLOWED_ENDPOINTS", allowed_endpoints.to_string());
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -140,10 +159,15 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         println!("{}", version);
         return Ok(ExitCode::SUCCESS);
     }
+    // resolve DNS names *before* the tracee process is spawned
+    let allowed_endpoints: AllowedEndpoints = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
+        Ok(endpoints) => endpoints.parse()?,
+        Err(_) => Default::default(),
+    };
     let (socket0, socket1) = socketpair_stream()?;
-    let mut target = spawn_target_process(socket0, args.command)?;
-    let mut tracer = spawn_tracer_process(socket1)?;
-    let status = target.wait()?;
+    let mut tracee = spawn_tracee_process(socket0, args.command)?;
+    let mut tracer = spawn_tracer_process(socket1, allowed_endpoints)?;
+    let status = tracee.wait()?;
     tracer.kill()?;
     tracer.wait()?;
     Ok(match status.code() {
