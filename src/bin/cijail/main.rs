@@ -1,6 +1,7 @@
 use std::env::args_os;
 use std::ffi::c_int;
 use std::ffi::OsString;
+use std::fmt::Display;
 use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
@@ -8,6 +9,9 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitCode;
 
+use caps::errors::CapsError;
+use caps::CapSet;
+use caps::Capability;
 use libseccomp::error::SeccompError;
 use libseccomp::ScmpFd;
 use passfd::FdPassingExt;
@@ -19,17 +23,21 @@ fn install_seccomp_notify_filter() -> Result<ScmpFd, SeccompError> {
     use libseccomp::*;
     let mut filter = ScmpFilterContext::new_filter(ScmpAction::Allow)?;
     filter.add_arch(ScmpArch::native())?;
-    let names = [
-        "connect",
-        "sendto",
-        "sendmmsg",
-    ];
+    let names = ["connect", "sendto", "sendmmsg"];
     for name in names {
         filter.add_rule(ScmpAction::Notify, ScmpSyscall::from_name(name)?)?;
     }
     filter.load()?;
     let notify_fd = filter.get_notify_fd()?;
     Ok(notify_fd)
+}
+
+fn drop_capabilities() -> Result<(), CapsError> {
+    caps::drop(None, CapSet::Ambient, Capability::CAP_SYS_PTRACE)?;
+    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SETPCAP)? {
+        caps::drop(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?;
+    }
+    Ok(())
 }
 
 fn spawn_target_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::error::Error>> {
@@ -42,9 +50,9 @@ fn spawn_target_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
+            drop_capabilities().map_err(other_to_io_error)?;
             set_no_new_privileges(true).map_err(to_io_error)?;
-            let notify_fd = install_seccomp_notify_filter()
-                .map_err(|e| std::io::Error::new(ErrorKind::Other, e.to_string()))?;
+            let notify_fd = install_seccomp_notify_filter().map_err(other_to_io_error)?;
             socket.send_fd(notify_fd)?;
             // file descriptors seem to close automatically
             Ok(())
@@ -97,6 +105,10 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
 
 fn to_io_error(ret: i32) -> std::io::Error {
     std::io::Error::from_raw_os_error(ret)
+}
+
+fn other_to_io_error(e: impl Display) -> std::io::Error {
+    std::io::Error::new(ErrorKind::Other, e.to_string())
 }
 
 fn check(ret: c_int) -> Result<(), std::io::Error> {

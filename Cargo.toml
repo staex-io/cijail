@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+caps = { version = "0.5.5", features = [], default-features = false }
 libc = { version = "0.2.153", features = ["std"], default-features = false }
 libseccomp = { version = "0.3.0", features = [], default-features = false }
 nix = { version = "0.28.0", features = ["uio", "process"], default-features = false }
