@@ -16,8 +16,8 @@ use libseccomp::ScmpFd;
 use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
+use nix::sys::prctl::set_no_new_privs;
 use passfd::FdPassingExt;
-use prctl::set_no_new_privileges;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
@@ -74,7 +74,7 @@ fn spawn_tracee_process(
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
             drop_capabilities().map_err(Error::map)?;
-            set_no_new_privileges(true).map_err(Error::to_io_error)?;
+            set_no_new_privs()?;
             let notify_fd = install_seccomp_notify_filter()?;
             // allow the first `sendmsg` call
             let tmp_thread = std::thread::spawn(move || -> Result<(), SeccompError> {

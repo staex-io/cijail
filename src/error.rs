@@ -20,10 +20,6 @@ impl Error {
     pub(crate) fn other(message: String) -> Error {
         Error::Os(std::io::Error::new(ErrorKind::Other, message))
     }
-
-    pub(crate) fn to_io_error(ret: i32) -> std::io::Error {
-        std::io::Error::from_raw_os_error(ret)
-    }
 }
 
 impl From<Error> for std::io::Error {
