@@ -1,0 +1,41 @@
+---
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        language: system
+        entry: cargo fmt --
+        types: [rust]
+      - id: cargo-check
+        name: cargo check
+        language: system
+        entry: cargo check --tests --workspace --quiet
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        language: system
+        entry: cargo clippy --tests --workspace --all-features -- -D warnings -D clippy::unwrap_used
+          -D clippy::expect_used -D clippy::panic
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-deny
+        name: cargo deny
+        language: system
+        entry: cargo deny check
+        pass_filenames: false
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck --external-sources
+        types: [shell]
+      - id: shfmt
+        name: shfmt
+        language: system
+        entry: shfmt --indent 4 --diff --write
+        types: [shell]
+  - repo: https://github.com/lyz-code/yamlfix
+    rev: 1.1.1
+    hooks:
+      - id: yamlfix

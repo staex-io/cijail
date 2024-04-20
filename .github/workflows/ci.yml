@@ -1,0 +1,34 @@
+---
+name: CI
+on: [push]
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:ef6c58cefe8a8a95660dc7d199f9d3a55720e84ac772dd64a02c6cf8c84ce4c9
+      credentials:
+        username: token
+        password: ${{ secrets.GHCR_TOKEN }}
+      options: --cap-add SYS_PTRACE
+    env:
+      RUST_BACKTRACE: 1
+      RUST_TEST_THREADS: 1
+      RUST_TEST_TIME_INTEGRATION: 30,60
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CIJAIL_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
+        pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
+        lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
+        151.101.44.223:443 lb-140-82-113-4-iad.github.com:443
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: DNS
+        run: ./ci/dns.sh
+      - name: Lint
+        run: ./ci/lint.sh
+      - name: Test
+        run: ./ci/test.sh
+      - name: Build
+        run: ./ci/binaries.sh
+      - name: Release
+        run: ./ci/release.sh
