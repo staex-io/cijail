@@ -5,10 +5,15 @@ edition = "2021"
 
 [dependencies]
 caps = { version = "0.5.5", features = [], default-features = false }
+clap = "4.5.4"
 libc = { version = "0.2.153", features = ["std"], default-features = false }
 libseccomp = { version = "0.3.0", features = [], default-features = false }
-nix = { version = "0.28.0", features = ["uio", "process"], default-features = false }
+nix = { version = "0.28.0", features = ["uio", "process", "fs"], default-features = false }
 os_socketaddr = { version = "0.2.5", features = [], default-features = false }
 passfd = { version = "0.1.6", features = [], default-features = false }
 prctl = { version = "1.0.0", features = [], default-features = false }
 socketpair = { version = "0.19.5", features = [], default-features = false }
+thiserror = { version = "1.0.58", features = [], default-features = false }
+
+[build-dependencies]
+bindgen = { version = "0.69.4", features = [], default-features = false }

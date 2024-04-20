@@ -1,8 +1,6 @@
 use std::env::args_os;
 use std::ffi::c_int;
 use std::ffi::OsString;
-use std::fmt::Display;
-use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Child;
@@ -12,27 +10,34 @@ use std::process::ExitCode;
 use caps::errors::CapsError;
 use caps::CapSet;
 use caps::Capability;
-use libseccomp::error::SeccompError;
+use libseccomp::notify_id_valid;
 use libseccomp::ScmpFd;
+use libseccomp::ScmpNotifReq;
+use libseccomp::ScmpNotifResp;
+use libseccomp::ScmpNotifRespFlags;
 use passfd::FdPassingExt;
 use prctl::set_no_new_privileges;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
-fn install_seccomp_notify_filter() -> Result<ScmpFd, SeccompError> {
+mod error;
+
+use crate::error::*;
+
+fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     use libseccomp::*;
     let mut filter = ScmpFilterContext::new_filter(ScmpAction::Allow)?;
     filter.add_arch(ScmpArch::native())?;
-    let names = ["connect", "sendto", "sendmmsg"];
-    for name in names {
+    for name in ["connect", "sendto", "sendmsg", "sendmmsg", "close"] {
         filter.add_rule(ScmpAction::Notify, ScmpSyscall::from_name(name)?)?;
     }
     filter.load()?;
-    let notify_fd = filter.get_notify_fd()?;
-    Ok(notify_fd)
+    Ok(filter.get_notify_fd()?)
 }
 
 fn drop_capabilities() -> Result<(), CapsError> {
+    // We drop `CAP_SYS_PTRACE` capability to ensure that
+    // the tracee can't modify tracer's memory.
     caps::drop(None, CapSet::Ambient, Capability::CAP_SYS_PTRACE)?;
     if caps::has_cap(None, CapSet::Effective, Capability::CAP_SETPCAP)? {
         caps::drop(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?;
@@ -50,10 +55,19 @@ fn spawn_target_process(socket: SocketpairStream) -> Result<Child, Box<dyn std::
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
-            drop_capabilities().map_err(other_to_io_error)?;
-            set_no_new_privileges(true).map_err(to_io_error)?;
-            let notify_fd = install_seccomp_notify_filter().map_err(other_to_io_error)?;
+            drop_capabilities().map_err(Error::map)?;
+            set_no_new_privileges(true).map_err(Error::to_io_error)?;
+            let notify_fd = install_seccomp_notify_filter()?;
+            // allow the first `sendmsg` call
+            let tmp_thread = std::thread::spawn(move || {
+                let request = ScmpNotifReq::receive(notify_fd).unwrap();
+                notify_id_valid(notify_fd, request.id).unwrap();
+                let response = ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty());
+                response.respond(notify_fd).unwrap();
+            });
+            // this is the first `sendmsg` call that we allow via the temporary thread above
             socket.send_fd(notify_fd)?;
+            tmp_thread.join().unwrap();
             // file descriptors seem to close automatically
             Ok(())
         })
@@ -103,18 +117,10 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     Ok(ExitCode::SUCCESS)
 }
 
-fn to_io_error(ret: i32) -> std::io::Error {
-    std::io::Error::from_raw_os_error(ret)
-}
-
-fn other_to_io_error(e: impl Display) -> std::io::Error {
-    std::io::Error::new(ErrorKind::Other, e.to_string())
-}
-
-fn check(ret: c_int) -> Result<(), std::io::Error> {
+fn check(ret: c_int) -> Result<c_int, std::io::Error> {
     if ret == -1 {
         Err(std::io::Error::last_os_error())
     } else {
-        Ok(())
+        Ok(ret)
     }
 }
