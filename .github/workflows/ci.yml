@@ -18,3 +18,5 @@ jobs:
         run: ./ci/lint.sh
       - name: Test
         run: ./ci/test.sh
+      - name: Build
+        run: ./ci/binaries.sh
