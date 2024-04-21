@@ -58,9 +58,38 @@ jobs:
     env:
       CIJAIL_ALLOWED_DNS_NAMES: github.com
       CIJAIL_ALLOWED_ENDPOINTS: github.com:443
+    steps:
+      - name: Lint
+        run: cijail ./ci/lint.sh
+      - name: Test
+        run: cijail ./ci/test.sh
 ```
+
+⚠ Github Actions do not respect Docker's `ENTRYPOINT`,
+and you have to prepend `cijail` to every command in each step.
+
+See this repository's [Github workflow](.github/workflows/ci.yml) as a real-world example.
 
 
 ## Run in a Gitlab pipeline
 
+Add the following lines to your `.gitlab-ci.yml`.
 
+```yaml
+variables:
+  CIJAIL_ALLOWED_DNS_NAMES: gitlab.com
+  CIJAIL_ALLOWED_ENDPOINTS: gitlab.com:443
+```
+
+✅Gitlab CI/CD pipelines respect Docker's `ENTRYPOINT`,
+and you do not have to prepend `cijail` to every command.
+
+Then you need to add `CAP_SYS_PTRACE` capability to your Gitlab runner configuration.
+Currently this is supported only for the runners that you host yourself.
+To do that add the following lines to `/etc/gitlab-runner/config.toml`.
+
+```toml
+[[runners]]
+  [runners.docker]
+    cap_add = ["SYS_PTRACE"]
+```
