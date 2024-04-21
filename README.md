@@ -15,11 +15,16 @@ needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.ht
 
 ## Run manually
 
-```bash
-env CIJAIL_ALLOWED_ENDPOINTS='one.one.one.one:53 github.com:433' \
-    CIJAIL_ALLOWED_DNS_NAMES='github.com' \
-    cijail \
-    YOUR COMMAND AND ARGS
+Cijail will print all IP addresses, ports nad domain names that it blocked
+as well as the corresponding system calls.
+The output looks like the following.
+```
+$ env CIJAIL_ALLOWED_ENDPOINTS='one.one.one.one:53' \
+      CIJAIL_ALLOWED_DNS_NAMES=''
+      cijail \
+      dig staex.io @1.1.1.1
+[Sun Apr 04 17:28:22 2024] cijail: allow connect 1.1.1.1:53
+[Sun Apr 04 17:28:22 2024] cijail: deny sendmmsg staex.io
 ```
 
 ## Run in Github Actions
@@ -35,8 +40,23 @@ RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
     --location \
     --output /usr/local/bin/cijail \
     https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version
+
+ENTRYPOINT ["/usr/local/bin/cijail"]
 ```
 
 If there is no matching glibc version, try to choose the lowest one (currently `glibc-2.31`).
 
-Then in your CI/CD pipeline define a list of allowed domain names.
+Then in your CI/CD pipeline define a list of allowed domain names and endpoints.
+
+```yaml
+jobs:
+  build:
+    container:
+      image: your-image-with-cijail-installed-as-entrypoint
+    env:
+      CIJAIL_ALLOWED_DNS_NAMES: 'github.com'
+      CIJAIL_ALLOWED_ENDPOINTS: 'github.com:443'
+```
+
+
+## Run in a Gitlab pipeline

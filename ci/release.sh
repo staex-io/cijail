@@ -1,8 +1,9 @@
 #!/bin/sh
 set -ex
-if test "$GITHUB_REF_TYPE" != "tag"; then
-    exit 0
-fi
+# TODO draft
+#if test "$GITHUB_REF_TYPE" != "tag"; then
+#    exit 0
+#fi
 curl -sL \
     -X POST \
     -H "Accept: application/vnd.github+json" \
@@ -16,7 +17,7 @@ curl -sL \
     "target_commitish":"'"$GITHUB_SHA"'",
     "name":"'"$GITHUB_REF_NAME"'",
     "body":"'"Release $GITHUB_REF_NAME"'",
-    "draft":false,
+    "draft":true,
     "prerelease":false,
     "generate_release_notes":true
 }'
