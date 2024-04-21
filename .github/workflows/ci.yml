@@ -11,8 +11,10 @@ jobs:
         password: ${{ secrets.GHCR_TOKEN }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CIJAIL_ALLOWED_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443
-      CIJAIL_ALLOWED_DNS_NAMES: github.com index.crates.io
+      CIJAIL_ALLOWED_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
+        pypi.org:443 files.pythonhosted.org:443
+      CIJAIL_ALLOWED_DNS_NAMES: github.com index.crates.io static.crates.io pypi.org
+        files.pythonhosted.org
     steps:
       - name: Checkout
         uses: actions/checkout@v3
