@@ -34,7 +34,7 @@ Add the following lines to your `Dockerfile`.
 ```dockerfile
 RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
     cijail_version=0.1.0 \
-    && curl \
+    curl \
     --silent \
     --fail \
     --location \
@@ -53,6 +53,7 @@ jobs:
   build:
     container:
       image: your-image-with-cijail-installed-as-entrypoint
+      options: '--cap-add CAP_SYS_PTRACE'
     env:
       CIJAIL_ALLOWED_DNS_NAMES: 'github.com'
       CIJAIL_ALLOWED_ENDPOINTS: 'github.com:443'
@@ -60,3 +61,5 @@ jobs:
 
 
 ## Run in a Gitlab pipeline
+
+
