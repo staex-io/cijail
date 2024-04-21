@@ -5,7 +5,7 @@ Cijail filters outgoing network traffic in accordance with
 
 **By default the outgoing traffic for all domain names, IP addresses and ports is blocked.**
 Cijail makes it impossible to exfiltrate the data over DNS and makes it difficult to do by other means.
-(The future versions will include H TTPS URL filter as well that would give even more granular control.)
+(The future versions will include HTTPS URL filter as well that would give even more granular control.)
 
 Cijail is implemented using [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) and
 needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) privilege to read memory of the processes being traced.
@@ -65,7 +65,7 @@ jobs:
         run: cijail ./ci/test.sh
 ```
 
-⚠ Github Actions do not respect Docker's `ENTRYPOINT`,
+⚠️ Github Actions do not respect Docker's `ENTRYPOINT`,
 and you have to prepend `cijail` to every command in each step.
 
 See this repository's [Github workflow](.github/workflows/ci.yml) as a real-world example.
@@ -81,7 +81,7 @@ variables:
   CIJAIL_ALLOWED_ENDPOINTS: gitlab.com:443
 ```
 
-✅Gitlab CI/CD pipelines respect Docker's `ENTRYPOINT`,
+✅ Gitlab CI/CD pipelines respect Docker's `ENTRYPOINT`,
 and you do not have to prepend `cijail` to every command.
 
 Then you need to add `CAP_SYS_PTRACE` capability to your Gitlab runner configuration.
