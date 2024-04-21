@@ -1,7 +1,3 @@
-#![allow(unused)]
-
-use std::net::Ipv4Addr;
-
 use thiserror::Error;
 
 const MAX_LABEL_LEN: usize = 63;
@@ -12,16 +8,6 @@ const HEADER_SIZE: usize = 12;
 pub enum DnsError {
     #[error("too small")]
     TooSmall,
-}
-#[repr(u8)]
-#[cfg_attr(test, derive(Debug))]
-pub(crate) enum ResponseCode {
-    Success = 0,
-    FormatError = 1,
-    ServerFailure = 2,
-    NameError = 3,
-    //NotImplemented = 4,
-    //Refused = 5,
 }
 
 #[repr(u16)]
@@ -124,14 +110,6 @@ pub(crate) struct Header {
 }
 
 impl Header {
-    pub(crate) fn set_response(&mut self) {
-        self.qr = true;
-    }
-
-    pub(crate) fn set_response_code(&mut self, code: ResponseCode) {
-        self.response_code = code as u8;
-    }
-
     fn read(bytes: &[u8]) -> Result<Self, DnsError> {
         if bytes.len() < HEADER_SIZE {
             return Err(DnsError::TooSmall);
@@ -200,10 +178,6 @@ impl Question {
         bytes[(offset + 2)..(offset + 4)].copy_from_slice(&self.class.to_be_bytes());
         Ok(offset + 4)
     }
-
-    pub(crate) fn get_type(&self) -> Type {
-        self.query_type.into()
-    }
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
@@ -216,26 +190,6 @@ pub(crate) struct Answer {
 }
 
 impl Answer {
-    pub(crate) fn from_ipv4_addr(name: Name, addr: Ipv4Addr) -> Self {
-        Self {
-            name,
-            answer_type: Type::A as u16,
-            class: 1,
-            ttl: 0,
-            data: addr.octets().into(),
-        }
-    }
-
-    pub(crate) fn from_str(name: Name, string: &str, ttl: i32) -> Result<Self, DnsError> {
-        Ok(Self {
-            name,
-            answer_type: Type::Ptr as u16,
-            class: 1,
-            ttl,
-            data: name_to_vec(string.as_bytes())?,
-        })
-    }
-
     fn read(all_bytes: &[u8], answer_offset: usize) -> Result<(Self, usize), DnsError> {
         let (name, offset) = read_name(all_bytes, answer_offset)?;
         if offset + 10 > all_bytes.len() {
@@ -278,7 +232,6 @@ impl Answer {
 #[cfg_attr(test, derive(PartialEq, Debug))]
 pub(crate) enum Name {
     Bytes(Vec<u8>),
-    Pointer(usize),
 }
 
 impl Name {
@@ -286,21 +239,8 @@ impl Name {
     fn write(&self, bytes: &mut [u8]) -> Result<usize, DnsError> {
         match self {
             Self::Bytes(vec) => write_name(vec.as_slice(), bytes),
-            Self::Pointer(offset) => {
-                bytes[0..2].copy_from_slice(
-                    &(((0b11 << 14) as u16) | ((offset & 0b111111) as u16)).to_be_bytes(),
-                );
-                Ok(2)
-            }
         }
     }
-}
-
-fn name_to_vec(name: &[u8]) -> Result<Vec<u8>, DnsError> {
-    let mut bytes: Vec<u8> = vec![0; MAX_NAME_LEN];
-    let n = write_name(name, bytes.as_mut_slice())?;
-    bytes.truncate(n);
-    Ok(bytes)
 }
 
 fn write_name(name: &[u8], bytes: &mut [u8]) -> Result<usize, DnsError> {
