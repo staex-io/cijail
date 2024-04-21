@@ -6,6 +6,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/staex-io/cijail-ci:latest
+      credentials:
+        username: token
+        password: ${{ secrets.GHCR_TOKEN }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
