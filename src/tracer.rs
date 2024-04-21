@@ -57,10 +57,20 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
                     request.data.args[4] as usize,
                     request.data.args[5] as u32,
                 )?;
+                read_dns_packet(
+                    request.pid as i32,
+                    request.data.args[1] as usize,
+                    request.data.args[2] as usize,
+                    &mut dns_names,
+                )?;
                 sockaddr.into_iter().collect()
             }
             "sendmsg" => {
-                let sockaddr = read_msghdr(request.pid as i32, request.data.args[1] as usize)?;
+                let sockaddr = read_msghdr(
+                    request.pid as i32,
+                    request.data.args[1] as usize,
+                    &mut dns_names,
+                )?;
                 sockaddr.into_iter().collect()
             }
             "sendmmsg" => read_mmsghdr(
@@ -124,7 +134,11 @@ fn read_socket_addr(pid: i32, base: usize, len: u32) -> Result<Option<SocketAddr
     Ok(sockaddr)
 }
 
-fn read_msghdr(pid: i32, base: usize) -> Result<Option<SocketAddr>, std::io::Error> {
+fn read_msghdr(
+    pid: i32,
+    base: usize,
+    dns_names: &mut Vec<DnsName>,
+) -> Result<Option<SocketAddr>, std::io::Error> {
     if base == 0 {
         return Ok(None);
     }
@@ -137,7 +151,15 @@ fn read_msghdr(pid: i32, base: usize) -> Result<Option<SocketAddr>, std::io::Err
     )?;
     let message = buf.as_mut_slice().as_ptr() as *const socket::msghdr;
     let message = unsafe { from_raw_parts::<socket::msghdr>(message, 1) }[0];
-    read_socket_addr(pid, message.msg_name as usize, message.msg_namelen)
+    let socketaddr = read_socket_addr(pid, message.msg_name as usize, message.msg_namelen)?;
+    if let Ok((iovecs, _storage)) =
+        read_array::<socket::iovec>(pid, message.msg_iov as usize, message.msg_iovlen)
+    {
+        for iovec in iovecs {
+            read_dns_packet(pid, iovec.iov_base as usize, iovec.iov_len, dns_names)?;
+        }
+    }
+    Ok(socketaddr)
 }
 
 fn read_mmsghdr(
@@ -159,30 +181,35 @@ fn read_mmsghdr(
             message.msg_hdr.msg_iovlen,
         ) {
             for iovec in iovecs {
-                let bytes = read_bytes(pid, iovec.iov_base as usize, iovec.iov_len)?;
-                match DnsPacket::read(bytes.as_slice()) {
-                    Ok((packet, _)) => {
-                        for question in packet.questions {
-                            match from_utf8(question.name.as_slice()) {
-                                Ok(name) => {
-                                    dns_names.push(name.parse().map_err(|e: DnsNameError| {
-                                        std::io::Error::new(ErrorKind::Other, e.to_string())
-                                    })?);
-                                }
-                                Err(e) => {
-                                    error!("failed to read dns name: {}", e);
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        error!("failed to read dns packet: {}", e);
-                    }
-                }
+                read_dns_packet(pid, iovec.iov_base as usize, iovec.iov_len, dns_names)?;
             }
         }
     }
     Ok(sockaddrs)
+}
+
+fn read_dns_packet(
+    pid: i32,
+    base: usize,
+    len: usize,
+    dns_names: &mut Vec<DnsName>,
+) -> Result<(), std::io::Error> {
+    let bytes = read_bytes(pid, base, len)?;
+    if let Ok((packet, _)) = DnsPacket::read(bytes.as_slice()) {
+        for question in packet.questions {
+            match from_utf8(question.name.as_slice()) {
+                Ok(name) => {
+                    dns_names.push(name.parse().map_err(|e: DnsNameError| {
+                        std::io::Error::new(ErrorKind::Other, e.to_string())
+                    })?);
+                }
+                Err(e) => {
+                    error!("failed to read dns name: {}", e);
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn read_array<'a, T>(
