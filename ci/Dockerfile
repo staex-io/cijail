@@ -8,6 +8,7 @@ RUN apt-get -qq update \
     libclang-dev \
     shellcheck \
     libseccomp-dev \
+    clang \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --quiet --no-cache-dir --no-input --break-system-packages lcov_cobertura==2.0.*
