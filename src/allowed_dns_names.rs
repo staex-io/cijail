@@ -8,7 +8,7 @@ use crate::DnsName;
 use crate::DnsNameError;
 
 pub(crate) struct AllowedDnsNames {
-    names: HashSet<String>,
+    names: HashSet<DnsName>,
 }
 
 impl AllowedDnsNames {
@@ -18,11 +18,11 @@ impl AllowedDnsNames {
         }
     }
 
-    pub(crate) fn contain(&self, name: &str) -> bool {
+    pub(crate) fn contain(&self, name: &DnsName) -> bool {
         self.names.contains(name)
     }
 
-    pub(crate) fn contain_any(&self, names: &[String]) -> bool {
+    pub(crate) fn contain_any(&self, names: &[DnsName]) -> bool {
         for name in names {
             if self.contain(name) {
                 return true;
@@ -45,10 +45,10 @@ impl TryFrom<&str> for AllowedDnsNames {
         for word in other.split_whitespace() {
             match word.parse::<DnsName>() {
                 Ok(name) => {
-                    allowed_dns_names.names.insert(name.into());
+                    allowed_dns_names.names.insert(name);
                 }
                 Err(e) => {
-                    error!("failed to parse `{}` as DNS name {}", word, e);
+                    error!("failed to parse `{}` as DNS name: {}", word, e);
                 }
             }
         }

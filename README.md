@@ -1,1 +1,1 @@
-# CI/CD process jail
+CI/CD pipeline process jail that filters outgoing network traffic.

@@ -1,4 +1,5 @@
 use std::fmt::Write;
+use std::io::ErrorKind;
 use std::io::IoSliceMut;
 use std::mem::size_of;
 use std::net::SocketAddr;
@@ -22,6 +23,8 @@ use os_socketaddr::OsSocketAddr;
 use crate::socket;
 use crate::AllowedDnsNames;
 use crate::AllowedEndpoints;
+use crate::DnsName;
+use crate::DnsNameError;
 use crate::DnsPacket;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
@@ -33,7 +36,7 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
         Ok(string) => string.as_str().try_into()?,
         Err(_) => Default::default(),
     };
-    let mut dns_names: Vec<String> = Vec::new();
+    let mut dns_names: Vec<DnsName> = Vec::new();
     loop {
         dns_names.clear();
         let request = ScmpNotifReq::receive(notify_fd)?;
@@ -79,7 +82,7 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
         };
         if !socket_addresses.is_empty() || !dns_names.is_empty() {
             info!(
-                "{} {}{} {}",
+                "{} {}{}{}",
                 if response.error == 0 { "allow" } else { "deny" },
                 syscall,
                 socket_addresses
@@ -88,7 +91,12 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
                         let _ = write!(&mut acc, " {}", x);
                         acc
                     }),
-                dns_names.join(" "),
+                dns_names
+                    .iter()
+                    .fold(String::with_capacity(4096), |mut acc, x| {
+                        let _ = write!(&mut acc, " {}", x);
+                        acc
+                    }),
             );
         }
         response.respond(notify_fd)?;
@@ -136,7 +144,7 @@ fn read_mmsghdr(
     pid: i32,
     base: usize,
     len: usize,
-    dns_names: &mut Vec<String>,
+    dns_names: &mut Vec<DnsName>,
 ) -> Result<Vec<SocketAddr>, std::io::Error> {
     let (messages, _storage) = read_array::<socket::mmsghdr>(pid, base, len)?;
     let mut sockaddrs: Vec<SocketAddr> = Vec::with_capacity(messages.len());
@@ -150,17 +158,16 @@ fn read_mmsghdr(
             message.msg_hdr.msg_iov as usize,
             message.msg_hdr.msg_iovlen,
         ) {
-            info!("iovecs {}", iovecs.len());
             for iovec in iovecs {
                 let bytes = read_bytes(pid, iovec.iov_base as usize, iovec.iov_len)?;
-                info!("bytes {}", bytes.len());
                 match DnsPacket::read(bytes.as_slice()) {
                     Ok((packet, _)) => {
                         for question in packet.questions {
                             match from_utf8(question.name.as_slice()) {
                                 Ok(name) => {
-                                    info!("dns name `{}`", name);
-                                    dns_names.push(name.to_string());
+                                    dns_names.push(name.parse().map_err(|e: DnsNameError| {
+                                        std::io::Error::new(ErrorKind::Other, e.to_string())
+                                    })?);
                                 }
                                 Err(e) => {
                                     error!("failed to read dns name: {}", e);

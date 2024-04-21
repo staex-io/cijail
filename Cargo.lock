@@ -139,6 +139,7 @@ dependencies = [
  "nix",
  "os_socketaddr",
  "passfd",
+ "punycode",
  "quickcheck",
  "quickcheck_macros",
  "rand",
@@ -442,6 +443,12 @@ checksum = "3d1597b0c024618f09a9c3b8655b7e430397a36d23fdafec26d6965e9eec3eba"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "punycode"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9e1dcb320d6839f6edb64f7a4a59d39b30480d4d1765b56873f7c858538a5fe"
 
 [[package]]
 name = "quickcheck"
