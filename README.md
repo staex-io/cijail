@@ -39,7 +39,8 @@ RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
     --fail \
     --location \
     --output /usr/local/bin/cijail \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version
+    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version \
+    && chmod +x /usr/local/bin/cijail
 
 ENTRYPOINT ["/usr/local/bin/cijail"]
 ```
