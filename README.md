@@ -54,10 +54,10 @@ jobs:
   build:
     container:
       image: your-image-with-cijail-installed-as-entrypoint
-      options: '--cap-add CAP_SYS_PTRACE'
+      options: --cap-add CAP_SYS_PTRACE
     env:
-      CIJAIL_ALLOWED_DNS_NAMES: 'github.com'
-      CIJAIL_ALLOWED_ENDPOINTS: 'github.com:443'
+      CIJAIL_ALLOWED_DNS_NAMES: github.com
+      CIJAIL_ALLOWED_ENDPOINTS: github.com:443
 ```
 
 
