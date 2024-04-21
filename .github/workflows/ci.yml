@@ -5,7 +5,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail:latest
+      image: ghcr.io/staex-io/cijail-ci:latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
