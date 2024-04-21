@@ -30,10 +30,8 @@ test_coverage_postamble() {
 test_all() {
     # compile everything
     cargo test --quiet --no-run
-    # run unit tests
-    cargo test --no-fail-fast --lib -- --nocapture
-    # run integration tests
-    cargo test --no-fail-fast --test '*' -- --nocapture
+    # run all tests
+    cargo test --no-fail-fast -- --nocapture
 }
 
 set -ex
