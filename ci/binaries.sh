@@ -24,6 +24,7 @@ rust_flags="-Ccodegen-units=1 -Cstrip=symbols -Copt-level=3 -Cincremental=false 
 target=x86_64-unknown-linux-musl
 export LIBSECCOMP_LINK_TYPE=static
 export LIBSECCOMP_LIB_PATH=/usr/lib/x86_64-linux-gnu
+apt-get update -qq
 apt-get install clang -y
 env RUSTFLAGS="$rust_flags" \
     cargo build \
