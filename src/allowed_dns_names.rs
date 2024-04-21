@@ -2,6 +2,11 @@ use std::collections::HashSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 
+use log::error;
+
+use crate::DnsName;
+use crate::DnsNameError;
+
 pub(crate) struct AllowedDnsNames {
     names: HashSet<String>,
 }
@@ -33,13 +38,21 @@ impl Default for AllowedDnsNames {
     }
 }
 
-impl From<&str> for AllowedDnsNames {
-    fn from(other: &str) -> Self {
+impl TryFrom<&str> for AllowedDnsNames {
+    type Error = DnsNameError;
+    fn try_from(other: &str) -> Result<Self, Self::Error> {
         let mut allowed_dns_names = AllowedDnsNames::new();
         for word in other.split_whitespace() {
-            allowed_dns_names.names.insert(word.to_string());
+            match word.parse::<DnsName>() {
+                Ok(name) => {
+                    allowed_dns_names.names.insert(name.into());
+                }
+                Err(e) => {
+                    error!("failed to parse `{}` as DNS name {}", word, e);
+                }
+            }
         }
-        allowed_dns_names
+        Ok(allowed_dns_names)
     }
 }
 

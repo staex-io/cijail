@@ -30,7 +30,7 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
         Err(_) => Default::default(),
     };
     let allowed_dns_names: AllowedDnsNames = match std::env::var("CIJAIL_ALLOWED_DNS_NAMES") {
-        Ok(string) => string.as_str().into(),
+        Ok(string) => string.as_str().try_into()?,
         Err(_) => Default::default(),
     };
     let mut dns_names: Vec<String> = Vec::new();

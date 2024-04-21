@@ -30,10 +30,14 @@ impl From<u16> for Type {
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
 pub struct DnsPacket {
-    pub(crate) header: Header,
+    #[allow(dead_code)]
+    pub(crate) header: DnsHeader,
     pub(crate) questions: Vec<Question>,
+    #[allow(dead_code)]
     pub(crate) answers: Vec<Answer>,
+    #[allow(dead_code)]
     authorities: Vec<Answer>,
+    #[allow(dead_code)]
     additional: Vec<Answer>,
 }
 
@@ -58,7 +62,7 @@ impl DnsPacket {
     }
 
     pub(crate) fn read(bytes: &[u8]) -> Result<(Self, usize), DnsError> {
-        let header = Header::read(bytes)?;
+        let header = DnsHeader::read(bytes)?;
         let mut questions: Vec<Question> = Vec::with_capacity(header.num_questions as usize);
         let mut answers: Vec<Answer> = Vec::with_capacity(header.num_answers as usize);
         let mut authorities: Vec<Answer> = Vec::with_capacity(header.num_authority as usize);
@@ -94,14 +98,22 @@ impl DnsPacket {
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
-pub(crate) struct Header {
+pub(crate) struct DnsHeader {
+    #[allow(dead_code)]
     id: u16,
+    #[allow(dead_code)]
     qr: bool,
+    #[allow(dead_code)]
     opcode: u8,
+    #[allow(dead_code)]
     authoritative_answer: bool,
+    #[allow(dead_code)]
     truncation: bool,
+    #[allow(dead_code)]
     recursion_desired: bool,
+    #[allow(dead_code)]
     recursion_available: bool,
+    #[allow(dead_code)]
     response_code: u8,
     num_questions: u16,
     num_answers: u16,
@@ -109,7 +121,7 @@ pub(crate) struct Header {
     num_additional: u16,
 }
 
-impl Header {
+impl DnsHeader {
     fn read(bytes: &[u8]) -> Result<Self, DnsError> {
         if bytes.len() < HEADER_SIZE {
             return Err(DnsError::TooSmall);
@@ -149,8 +161,11 @@ impl Header {
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
 pub(crate) struct Question {
     pub(crate) name: Vec<u8>,
+    #[allow(dead_code)]
     pub(crate) query_type: u16,
+    #[allow(dead_code)]
     pub(crate) class: u16,
+    #[allow(dead_code)]
     pub(crate) name_offset: usize,
 }
 
@@ -182,10 +197,15 @@ impl Question {
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
 pub(crate) struct Answer {
+    #[allow(dead_code)]
     pub(crate) name: Name,
+    #[allow(dead_code)]
     pub(crate) answer_type: u16,
+    #[allow(dead_code)]
     pub(crate) class: u16,
+    #[allow(dead_code)]
     pub(crate) ttl: i32, // should be positive
+    #[allow(dead_code)]
     pub(crate) data: Vec<u8>,
 }
 
@@ -243,6 +263,7 @@ impl Name {
     }
 }
 
+#[cfg(test)]
 fn write_name(name: &[u8], bytes: &mut [u8]) -> Result<usize, DnsError> {
     let name_len = name.len();
     Ok(if name_len == 0 {
@@ -321,10 +342,10 @@ mod tests {
     use super::*;
 
     #[quickcheck_macros::quickcheck]
-    fn read_write_header(header: Header) {
+    fn read_write_header(header: DnsHeader) {
         let mut bytes = [0_u8; HEADER_SIZE];
         header.write(&mut bytes[..]);
-        let actual_header = Header::read(&bytes[..]).unwrap();
+        let actual_header = DnsHeader::read(&bytes[..]).unwrap();
         assert_eq!(
             header, actual_header,
             "expected\n{:#?}\nactual\n{:#?}",
@@ -332,7 +353,7 @@ mod tests {
         );
     }
 
-    impl Arbitrary for Header {
+    impl Arbitrary for DnsHeader {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             let mut prng = rand::thread_rng();
             Self {
@@ -353,7 +374,7 @@ mod tests {
     }
 
     #[quickcheck_macros::quickcheck]
-    fn read_write_question(header: Header, question: Question) {
+    fn read_write_question(header: DnsHeader, question: Question) {
         let mut bytes = [0_u8; 512];
         header.write(&mut bytes[..]);
         question.write(&mut bytes[HEADER_SIZE..]).unwrap();
@@ -399,7 +420,7 @@ mod tests {
     }
 
     #[quickcheck_macros::quickcheck]
-    fn read_write_answer(header: Header, answer: Answer) {
+    fn read_write_answer(header: DnsHeader, answer: Answer) {
         let mut bytes = [0_u8; 512];
         header.write(&mut bytes[..]);
         answer.write(&mut bytes[HEADER_SIZE..]).unwrap();

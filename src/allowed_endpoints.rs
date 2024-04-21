@@ -44,16 +44,10 @@ impl FromStr for AllowedEndpoints {
         let mut allowed_endpoints = AllowedEndpoints::new();
         for word in other.split_whitespace() {
             // with DNS name resolution
-            let socketaddrs = match word.to_socket_addrs() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    error!("failed to parse `{}` as socket address: {}", word, e);
-                    continue;
-                }
-            };
-            allowed_endpoints
-                .socketaddrs
-                .extend(socketaddrs.into_iter());
+            match word.to_socket_addrs() {
+                Ok(addrs) => allowed_endpoints.socketaddrs.extend(addrs.into_iter()),
+                Err(e) => error!("failed to parse `{}` as socket address: {}", word, e),
+            }
         }
         Ok(allowed_endpoints)
     }
@@ -64,14 +58,12 @@ impl From<&str> for AllowedEndpoints {
         let mut allowed_endpoints = AllowedEndpoints::new();
         for word in other.split_whitespace() {
             // no DNS name resolution
-            let socketaddr = match word.parse() {
-                Ok(addr) => addr,
-                Err(e) => {
-                    error!("failed to parse `{}` as socket address: {}", word, e);
-                    continue;
+            match word.parse() {
+                Ok(addr) => {
+                    allowed_endpoints.socketaddrs.insert(addr);
                 }
-            };
-            allowed_endpoints.socketaddrs.insert(socketaddr);
+                Err(e) => error!("failed to parse `{}` as socket address: {}", word, e),
+            }
         }
         allowed_endpoints
     }

@@ -25,16 +25,18 @@ use crate::AllowedEndpoints;
 use crate::Error;
 use crate::Logger;
 
-pub(crate) mod allowed_dns_names;
-pub(crate) mod allowed_endpoints;
-pub(crate) mod dns_packet;
-pub(crate) mod error;
-pub(crate) mod logger;
-pub(crate) mod socket;
-pub(crate) mod tracer;
+mod allowed_dns_names;
+mod allowed_endpoints;
+mod dns_name;
+mod dns_packet;
+mod error;
+mod logger;
+mod socket;
+mod tracer;
 
 pub(crate) use self::allowed_dns_names::*;
 pub(crate) use self::allowed_endpoints::*;
+pub(crate) use self::dns_name::*;
 pub(crate) use self::dns_packet::*;
 pub(crate) use self::error::*;
 pub(crate) use self::logger::*;
