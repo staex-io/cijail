@@ -4,12 +4,16 @@ use std::io::ErrorKind;
 use libseccomp::error::SeccompError;
 use thiserror::Error;
 
+use crate::DnsNameError;
+
 #[derive(Error, Debug)]
 pub(crate) enum Error {
     #[error("seccomp error: {0}")]
     Seccomp(#[from] SeccompError),
     #[error("os error: {0}")]
     Os(#[from] std::io::Error),
+    #[error("dns name error: {0}")]
+    DnsName(#[from] DnsNameError),
 }
 
 impl Error {

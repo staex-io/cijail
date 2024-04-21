@@ -26,8 +26,14 @@ use crate::AllowedEndpoints;
 use crate::DnsName;
 use crate::DnsNameError;
 use crate::DnsPacket;
+use caps::CapSet;
+use caps::Capability;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
+        error!("tracer process does not have CAP_SYS_PTRACE capability");
+        return Ok(ExitCode::FAILURE);
+    }
     let allowed_endpoints: AllowedEndpoints = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
         Ok(string) => string.as_str().into(),
         Err(_) => Default::default(),
