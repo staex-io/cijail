@@ -1,3 +1,5 @@
+# Introduction
+
 Cijail is a CI/CD pipeline process jail that helps prevent supply chain attacks.
 Cijail filters outgoing network traffic in accordance with
 - allow list of endpoints (specified by an IP address and a port) and
@@ -8,12 +10,12 @@ Cijail makes it impossible to exfiltrate the data over DNS and makes it difficul
 (The future versions will include HTTPS URL filter as well that would give even more granular control.)
 
 Cijail is implemented using [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) and
-needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) privilege to read memory of the processes being traced.
+needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) capability to read memory of the processes being traced.
 
 
 # Usage
 
-## Run manually
+## Use manually
 
 Cijail will print all IP addresses, ports nad domain names that it blocked
 as well as the corresponding system calls.
@@ -27,7 +29,7 @@ $ env CIJAIL_ALLOWED_ENDPOINTS='one.one.one.one:53' \
 [Sun Apr 04 17:28:22 2024] cijail: deny sendmmsg staex.io
 ```
 
-## Run in Github Actions
+## Use in Github Actions
 
 Add the following lines to your `Dockerfile`.
 
@@ -71,7 +73,7 @@ and you have to prepend `cijail` to every command in each step.
 See this repository's [Github workflow](.github/workflows/ci.yml) as a real-world example.
 
 
-## Run in a Gitlab pipeline
+## Use in a Gitlab pipeline
 
 Add the following lines to your `.gitlab-ci.yml`.
 
