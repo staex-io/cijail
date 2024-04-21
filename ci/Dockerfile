@@ -1,4 +1,6 @@
-FROM rust:1.76.0
+FROM rust:1.76.0-bullseye
+# NB: We need debian stable to have the oldest possible glibc
+# otherwise cijail may not work on old distributions.
 
 RUN apt-get -qq update \
     && apt-get -qq install --no-install-recommends \
@@ -11,7 +13,7 @@ RUN apt-get -qq update \
     clang \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --quiet --no-cache-dir --no-input --break-system-packages lcov_cobertura==2.0.*
+RUN pip3 install --quiet --no-cache-dir --no-input lcov_cobertura==2.0.*
 
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
