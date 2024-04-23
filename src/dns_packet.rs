@@ -333,6 +333,7 @@ fn read_name(bytes: &[u8], question_offset: usize) -> Result<(Vec<u8>, usize), D
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used)]
+    #![allow(clippy::panic)]
 
     use std::net::Ipv4Addr;
 
