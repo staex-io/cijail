@@ -2,18 +2,26 @@
 name = "cijail"
 version = "0.1.0"
 edition = "2021"
+publish = false
 
 [dependencies]
 caps = { version = "0.5.5", features = [], default-features = false }
-clap = "4.5.4"
+chrono = { version = "0.4.38", features = ["alloc", "clock"], default-features = false }
+clap = { version = "4.5.4", features = ["std", "derive", "help", "usage"], default-features = false }
 libc = { version = "0.2.153", features = ["std"], default-features = false }
 libseccomp = { version = "0.3.0", features = [], default-features = false }
+log = { version = "0.4.21", features = [], default-features = false }
 nix = { version = "0.28.0", features = ["uio", "process", "fs"], default-features = false }
 os_socketaddr = { version = "0.2.5", features = [], default-features = false }
 passfd = { version = "0.1.6", features = [], default-features = false }
-prctl = { version = "1.0.0", features = [], default-features = false }
+punycode = { version = "0.4.1", features = [], default-features = false }
 socketpair = { version = "0.19.5", features = [], default-features = false }
 thiserror = { version = "1.0.58", features = [], default-features = false }
+
+[dev-dependencies]
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+rand = "0.8.5"
 
 [build-dependencies]
 bindgen = { version = "0.69.4", features = [], default-features = false }
