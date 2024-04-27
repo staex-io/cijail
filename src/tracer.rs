@@ -14,7 +14,6 @@ use std::slice::from_raw_parts;
 use std::str::from_utf8;
 
 use cijail::DnsName;
-use cijail::DnsNameError;
 use cijail::DnsPacket;
 use cijail::Error;
 use libc::sockaddr;
@@ -239,14 +238,13 @@ impl Context {
         if let Ok((packet, _)) = DnsPacket::read(bytes.as_slice()) {
             for question in packet.questions {
                 match from_utf8(question.name.as_slice()) {
-                    Ok(name) => {
-                        dns_names.push(name.parse().map_err(|e: DnsNameError| {
-                            std::io::Error::new(ErrorKind::Other, e.to_string())
-                        })?);
-                    }
-                    Err(e) => {
-                        error!("failed to read dns name: {}", e);
-                    }
+                    Ok(name) => match name.parse::<DnsName>() {
+                        Ok(dns_name) => dns_names.push(dns_name),
+                        Err(e) => {
+                            error!("failed to parse DNS name `{}`: {}", name, e);
+                        }
+                    },
+                    Err(e) => error!("failed to read DNS name: {}", e),
                 }
             }
         }
