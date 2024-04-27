@@ -35,7 +35,7 @@ Add the following lines to your `Dockerfile`.
 ```dockerfile
 RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
     cijail_version=0.2.0 \
-    curl \
+    && curl \
     --silent \
     --fail \
     --location \

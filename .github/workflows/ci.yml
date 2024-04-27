@@ -25,10 +25,10 @@ jobs:
       - name: DNS
         run: ./ci/dns.sh
       - name: Lint
-        run: ./ci/lint.sh
+        run: cijail ./ci/lint.sh
       - name: Test
         run: ./ci/test.sh
       - name: Build
-        run: ./ci/binaries.sh
+        run: cijail ./ci/binaries.sh
       - name: Release
-        run: ./ci/release.sh
+        run: cijail ./ci/release.sh
