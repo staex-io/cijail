@@ -5,7 +5,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-caps = { version = "0.5.5", features = [], default-features = false }
 chrono = { version = "0.4.38", features = ["alloc", "clock"], default-features = false }
 clap = { version = "4.5.4", features = ["std", "derive", "help", "usage"], default-features = false }
 libc = { version = "0.2.153", features = ["std"], default-features = false }

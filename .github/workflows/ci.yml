@@ -9,7 +9,6 @@ jobs:
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
-      options: --cap-add CAP_SYS_PTRACE
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CIJAIL_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
