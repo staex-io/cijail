@@ -33,7 +33,7 @@ test_all() {
     ./target/debug/cijail --version
     ldd ./target/debug/cijail
     # run all tests
-    cargo test --no-fail-fast -- --nocapture
+    cargo test --no-fail-fast -- --nocapture --ensure-time
 }
 
 set -ex
