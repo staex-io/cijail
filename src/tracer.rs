@@ -8,6 +8,8 @@ use std::process::ExitCode;
 use std::slice::from_raw_parts;
 use std::str::from_utf8;
 
+use caps::CapSet;
+use caps::Capability;
 use libc::sockaddr;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
@@ -26,8 +28,6 @@ use crate::AllowedEndpoints;
 use crate::DnsName;
 use crate::DnsNameError;
 use crate::DnsPacket;
-use caps::CapSet;
-use caps::Capability;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
     if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
@@ -97,23 +97,20 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
             ScmpNotifResp::new_error(request.id, error, ScmpNotifRespFlags::empty())
         };
         if !socket_addresses.is_empty() || !dns_names.is_empty() {
-            info!(
-                "{} {}{}{}",
-                if response.error == 0 { "allow" } else { "deny" },
-                syscall,
-                socket_addresses
-                    .iter()
-                    .fold(String::with_capacity(4096), |mut acc, x| {
-                        let _ = write!(&mut acc, " {}", x);
-                        acc
-                    }),
-                dns_names
-                    .iter()
-                    .fold(String::with_capacity(4096), |mut acc, x| {
-                        let _ = write!(&mut acc, " {}", x);
-                        acc
-                    }),
-            );
+            let mut buf = String::with_capacity(4096);
+            write!(
+                &mut buf,
+                "{}",
+                if response.error == 0 { "allow" } else { "deny" }
+            )?;
+            write!(&mut buf, " {}", syscall)?;
+            for addr in socket_addresses.iter() {
+                write!(&mut buf, " {}", addr)?;
+            }
+            for name in dns_names.iter() {
+                write!(&mut buf, " {}", name)?;
+            }
+            info!("{}", buf);
         }
         response.respond(notify_fd)?;
     }
