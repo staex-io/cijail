@@ -22,7 +22,6 @@ as well as the corresponding system calls.
 The output looks like the following.
 ```
 $ env CIJAIL_ALLOWED_ENDPOINTS='one.one.one.one:53' \
-      CIJAIL_ALLOWED_DNS_NAMES=''
       cijail \
       dig staex.io @1.1.1.1
 [Sun Apr 04 17:28:22 2024] cijail: allow connect 1.1.1.1:53
@@ -58,7 +57,6 @@ jobs:
       image: your-image-with-cijail-installed-as-entrypoint
       options: --cap-add CAP_SYS_PTRACE
     env:
-      CIJAIL_ALLOWED_DNS_NAMES: github.com
       CIJAIL_ALLOWED_ENDPOINTS: github.com:443
     steps:
       - name: Lint
@@ -79,7 +77,6 @@ Add the following lines to your `.gitlab-ci.yml`.
 
 ```yaml
 variables:
-  CIJAIL_ALLOWED_DNS_NAMES: gitlab.com
   CIJAIL_ALLOWED_ENDPOINTS: gitlab.com:443
 ```
 

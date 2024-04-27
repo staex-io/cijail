@@ -16,9 +16,6 @@ jobs:
         pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
         lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
         151.101.44.223:443 lb-140-82-113-4-iad.github.com:443
-      CIJAIL_ALLOWED_DNS_NAMES: github.com index.crates.io static.crates.io pypi.org
-        files.pythonhosted.org lb-140-82-112-4-iad.github.com lb-140-82-113-3-iad.github.com
-        lb-140-82-114-4-iad.github.com lb-140-82-116-4-sea.github.com lb-140-82-113-4-iad.github.com
     steps:
       - name: Checkout
         uses: actions/checkout@v3

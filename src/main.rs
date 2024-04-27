@@ -21,23 +21,21 @@ use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
-use crate::AllowedEndpoints;
+use crate::EndpointSet;
 use crate::Error;
 use crate::Logger;
 
-mod allowed_dns_names;
-mod allowed_endpoints;
 mod dns_name;
 mod dns_packet;
+mod endpoint_set;
 mod error;
 mod logger;
 mod socket;
 mod tracer;
 
-pub(crate) use self::allowed_dns_names::*;
-pub(crate) use self::allowed_endpoints::*;
 pub(crate) use self::dns_name::*;
 pub(crate) use self::dns_packet::*;
+pub(crate) use self::endpoint_set::*;
 pub(crate) use self::error::*;
 pub(crate) use self::logger::*;
 
@@ -110,7 +108,7 @@ fn spawn_tracee_process(
 
 fn spawn_tracer_process(
     socket: SocketpairStream,
-    allowed_endpoints: AllowedEndpoints,
+    allowed_endpoints: EndpointSet,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let arg0 = std::env::args_os()
         .next()
@@ -162,8 +160,8 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         return Ok(ExitCode::SUCCESS);
     }
     // resolve DNS names *before* the tracee process is spawned
-    let allowed_endpoints: AllowedEndpoints = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
-        Ok(endpoints) => endpoints.parse()?,
+    let allowed_endpoints: EndpointSet = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
+        Ok(endpoints) => EndpointSet::parse_with_dns_name_resolution(endpoints.as_str())?,
         Err(_) => Default::default(),
     };
     let (socket0, socket1) = socketpair_stream()?;

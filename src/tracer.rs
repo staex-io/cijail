@@ -23,23 +23,18 @@ use nix::unistd::Pid;
 use os_socketaddr::OsSocketAddr;
 
 use crate::socket;
-use crate::AllowedDnsNames;
-use crate::AllowedEndpoints;
 use crate::DnsName;
 use crate::DnsNameError;
 use crate::DnsPacket;
+use crate::EndpointSet;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
     if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
         error!("tracer process does not have CAP_SYS_PTRACE capability");
         return Ok(ExitCode::FAILURE);
     }
-    let allowed_endpoints: AllowedEndpoints = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
-        Ok(string) => string.as_str().into(),
-        Err(_) => Default::default(),
-    };
-    let allowed_dns_names: AllowedDnsNames = match std::env::var("CIJAIL_ALLOWED_DNS_NAMES") {
-        Ok(string) => string.as_str().try_into()?,
+    let allowed_endpoints: EndpointSet = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
+        Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
         Err(_) => Default::default(),
     };
     let mut dns_names: Vec<DnsName> = Vec::new();
@@ -88,8 +83,9 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
             _ => Vec::new(),
         };
         let response = if (socket_addresses.is_empty()
-            || allowed_endpoints.contain_any(socket_addresses.as_slice()))
-            && (dns_names.is_empty() || allowed_dns_names.contain_any(dns_names.as_slice()))
+            || allowed_endpoints.contains_any_socket_address(socket_addresses.as_slice()))
+            && (dns_names.is_empty()
+                || allowed_endpoints.contains_any_dns_name(dns_names.as_slice()))
         {
             ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
         } else {
