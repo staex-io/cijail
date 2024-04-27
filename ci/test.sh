@@ -32,6 +32,7 @@ test_all() {
     cargo test --quiet --no-run
     ./target/debug/cijail --version
     ldd ./target/debug/cijail
+    ./target/debug/cijail sh -c 'head -n1 /etc/passwd'
     # run all tests
     cargo test --no-fail-fast -- --nocapture
 }
