@@ -30,6 +30,8 @@ test_coverage_postamble() {
 test_all() {
     # compile everything
     cargo test --quiet --no-run
+    ./target/debug/cijail --version
+    ldd ./target/debug/cijail
     # run all tests
     cargo test --no-fail-fast -- --nocapture
 }
