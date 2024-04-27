@@ -9,6 +9,7 @@ jobs:
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
+      options: --cap-add CAP_SYS_PTRACE
     env:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1

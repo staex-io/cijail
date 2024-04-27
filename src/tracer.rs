@@ -13,6 +13,8 @@ use std::process::ExitCode;
 use std::slice::from_raw_parts;
 use std::str::from_utf8;
 
+use caps::CapSet;
+use caps::Capability;
 use cijail::DnsName;
 use cijail::DnsNameError;
 use cijail::DnsPacket;
@@ -39,16 +41,24 @@ use crate::EndpointSet;
 use crate::CIJAIL_ENDPOINTS;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
+        error!("tracer process does not have CAP_SYS_PTRACE capability");
+        return Ok(ExitCode::FAILURE);
+    }
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
         Err(_) => Default::default(),
     };
-    let prohibited_files: HashSet<ProhibitedFile> = [
-        ProhibitedFile::new(format!("/proc/{}/mem", std::process::id()).as_str())?,
-        ProhibitedFile::new(format!("/proc/{}/mem", parent_id()).as_str())?,
-        ProhibitedFile::new("/dev/mem")?,
-    ]
-    .into();
+    let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
+    prohibited_files.insert(ProhibitedFile::new(
+        format!("/proc/{}/mem", std::process::id()).as_str(),
+    )?);
+    prohibited_files.insert(ProhibitedFile::new(
+        format!("/proc/{}/mem", parent_id()).as_str(),
+    )?);
+    if let Ok(file) = ProhibitedFile::new("/dev/mem") {
+        prohibited_files.insert(file);
+    }
     let mut dns_names: Vec<DnsName> = Vec::new();
     let mut denied_paths: Vec<PathBuf> = Vec::new();
     let mut sockaddrs: Vec<SocketAddr> = Vec::new();
