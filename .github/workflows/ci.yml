@@ -21,9 +21,9 @@ jobs:
       - name: DNS
         run: ./ci/dns.sh
       - name: Lint
-        run: cijail ./ci/lint.sh
+        run: ./ci/lint.sh
       - name: Test
-        run: cijail ./ci/test.sh
+        run: ./ci/test.sh
       - name: Build
         run: ./ci/binaries.sh
       - name: Release

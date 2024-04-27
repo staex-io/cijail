@@ -71,7 +71,6 @@ for i in /proc/*/exe; do
         continue
     fi
     mem="$(dirname "$i")"/mem
-    #echo "$mem" "$filename"
     cat "$mem" "$filename" >/dev/null
 done
 "#
