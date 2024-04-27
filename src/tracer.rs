@@ -13,8 +13,8 @@ use std::process::ExitCode;
 use std::slice::from_raw_parts;
 use std::str::from_utf8;
 
-use caps::CapSet;
-use caps::Capability;
+//use caps::CapSet;
+//use caps::Capability;
 use cijail::DnsName;
 use cijail::DnsNameError;
 use cijail::DnsPacket;
@@ -41,10 +41,10 @@ use crate::EndpointSet;
 use crate::CIJAIL_ENDPOINTS;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
-        error!("tracer process does not have CAP_SYS_PTRACE capability");
-        return Ok(ExitCode::FAILURE);
-    }
+    //if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {
+    //    error!("tracer process does not have CAP_SYS_PTRACE capability");
+    //    return Ok(ExitCode::FAILURE);
+    //}
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
         Err(_) => Default::default(),
