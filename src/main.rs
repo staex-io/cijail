@@ -38,8 +38,16 @@ fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     use libseccomp::*;
     let mut filter = ScmpFilterContext::new_filter(ScmpAction::Allow)?;
     filter.add_arch(ScmpArch::native())?;
-    for name in ["connect", "sendto", "sendmsg", "sendmmsg"] {
+    for name in [
+        "connect", "sendto", "sendmsg", "sendmmsg", "write", "send", "open", "openat",
+    ] {
         filter.add_rule(ScmpAction::Notify, ScmpSyscall::from_name(name)?)?;
+    }
+    for name in ["unshare", "setns", "mount", "umount", "process_vm_writev"] {
+        filter.add_rule(
+            ScmpAction::Errno(libc::EPERM),
+            ScmpSyscall::from_name(name)?,
+        )?;
     }
     filter.load()?;
     Ok(filter.get_notify_fd()?)

@@ -36,6 +36,50 @@ fn dig() {
     dns_server.stop();
 }
 
+#[test]
+fn read_dev_mem() {
+    let sh_args = vec!["/bin/sh", "-c", "exec head -n1 /dev/mem"];
+    assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));
+}
+
+#[test]
+fn read_dev_mem_symlink() {
+    let sh_args = vec![
+        "/bin/sh",
+        "-c",
+        r#"
+set -e
+tmpdir=$(mktemp -d)
+ln -s /dev/mem $tmpdir/mem
+exec head -n1 $tmpdir/mem
+"#,
+    ];
+    assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));
+}
+
+#[test]
+fn read_proc_mem() {
+    let sh_args = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        format!(
+            r#"
+set -e
+for i in /proc/*/exe; do
+    filename="$(readlink "$i" || true)"
+    if ! expr "$filename" : '.*cijail$' >/dev/null; then
+        continue
+    fi
+    mem="$(dirname "$i")"/mem
+    #echo "$mem" "$filename"
+    cat "$mem" "$filename" >/dev/null
+done
+"#
+        ),
+    ];
+    assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));
+}
+
 fn assert_success(command: &mut Command) {
     match command.status() {
         Ok(status) => match status.code() {
