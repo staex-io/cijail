@@ -30,10 +30,8 @@ test_coverage_postamble() {
 test_all() {
     # compile everything
     cargo test --quiet --no-run
-    docker ps
     ./target/debug/cijail --version
     ldd ./target/debug/cijail
-    docker exec ci ./target/debug/cijail sh -c 'head -n1 /etc/passwd'
     ./target/debug/cijail sh -c 'head -n1 /etc/passwd'
     # run all tests
     cargo test --no-fail-fast -- --nocapture
