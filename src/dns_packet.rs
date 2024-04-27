@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use thiserror::Error;
 
 const MAX_LABEL_LEN: usize = 63;
@@ -10,11 +11,23 @@ pub enum DnsError {
     TooSmall,
 }
 
+#[repr(u8)]
+#[cfg_attr(test, derive(Debug))]
+pub enum ResponseCode {
+    Success = 0,
+    FormatError = 1,
+    ServerFailure = 2,
+    NameError = 3,
+    //NotImplemented = 4,
+    //Refused = 5,
+}
+
 #[repr(u16)]
 #[non_exhaustive]
-pub(crate) enum Type {
+pub enum Type {
     A = 1,
     Ptr = 12,
+    AAAA = 28,
     Unknown = u16::MAX,
 }
 
@@ -30,11 +43,10 @@ impl From<u16> for Type {
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
 pub struct DnsPacket {
+    pub header: DnsHeader,
+    pub questions: Vec<Question>,
     #[allow(dead_code)]
-    pub(crate) header: DnsHeader,
-    pub(crate) questions: Vec<Question>,
-    #[allow(dead_code)]
-    pub(crate) answers: Vec<Answer>,
+    pub answers: Vec<Answer>,
     #[allow(dead_code)]
     authorities: Vec<Answer>,
     #[allow(dead_code)]
@@ -42,8 +54,7 @@ pub struct DnsPacket {
 }
 
 impl DnsPacket {
-    #[cfg(test)]
-    pub(crate) fn write(&mut self, bytes: &mut [u8]) -> Result<usize, DnsError> {
+    pub fn write(&mut self, bytes: &mut [u8]) -> Result<usize, DnsError> {
         self.header.num_questions = self.questions.len() as u16;
         self.header.num_answers = self.answers.len() as u16;
         self.header.num_authority = self.authorities.len() as u16;
@@ -61,7 +72,7 @@ impl DnsPacket {
         Ok(offset)
     }
 
-    pub(crate) fn read(bytes: &[u8]) -> Result<(Self, usize), DnsError> {
+    pub fn read(bytes: &[u8]) -> Result<(Self, usize), DnsError> {
         let header = DnsHeader::read(bytes)?;
         let mut questions: Vec<Question> = Vec::with_capacity(header.num_questions as usize);
         let mut answers: Vec<Answer> = Vec::with_capacity(header.num_answers as usize);
@@ -98,7 +109,7 @@ impl DnsPacket {
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
-pub(crate) struct DnsHeader {
+pub struct DnsHeader {
     #[allow(dead_code)]
     id: u16,
     #[allow(dead_code)]
@@ -142,7 +153,6 @@ impl DnsHeader {
         })
     }
 
-    #[cfg(test)]
     fn write(&self, bytes: &mut [u8]) {
         bytes[0..2].copy_from_slice(&self.id.to_be_bytes());
         bytes[2] = (((self.qr as u8) & 0b1) << 7)
@@ -156,17 +166,25 @@ impl DnsHeader {
         bytes[8..10].copy_from_slice(&self.num_authority.to_be_bytes());
         bytes[10..12].copy_from_slice(&self.num_additional.to_be_bytes());
     }
+
+    pub fn set_response(&mut self) {
+        self.qr = true;
+    }
+
+    pub fn set_response_code(&mut self, code: ResponseCode) {
+        self.response_code = code as u8;
+    }
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
-pub(crate) struct Question {
-    pub(crate) name: Vec<u8>,
+pub struct Question {
+    pub name: Vec<u8>,
     #[allow(dead_code)]
-    pub(crate) query_type: u16,
+    pub query_type: u16,
     #[allow(dead_code)]
-    pub(crate) class: u16,
+    pub class: u16,
     #[allow(dead_code)]
-    pub(crate) name_offset: usize,
+    pub name_offset: usize,
 }
 
 impl Question {
@@ -186,30 +204,49 @@ impl Question {
         ))
     }
 
-    #[cfg(test)]
     fn write(&self, bytes: &mut [u8]) -> Result<usize, DnsError> {
         let offset = write_name(self.name.as_slice(), bytes)?;
         bytes[offset..(offset + 2)].copy_from_slice(&self.query_type.to_be_bytes());
         bytes[(offset + 2)..(offset + 4)].copy_from_slice(&self.class.to_be_bytes());
         Ok(offset + 4)
     }
+
+    pub fn get_type(&self) -> Type {
+        self.query_type.into()
+    }
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
-pub(crate) struct Answer {
+pub struct Answer {
     #[allow(dead_code)]
-    pub(crate) name: Name,
+    pub name: Name,
     #[allow(dead_code)]
-    pub(crate) answer_type: u16,
+    pub answer_type: u16,
     #[allow(dead_code)]
-    pub(crate) class: u16,
+    pub class: u16,
     #[allow(dead_code)]
-    pub(crate) ttl: i32, // should be positive
+    pub ttl: i32, // should be positive
     #[allow(dead_code)]
-    pub(crate) data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl Answer {
+    pub fn from_ipaddr(name: Name, addr: IpAddr) -> Self {
+        Self {
+            name,
+            answer_type: match addr {
+                IpAddr::V4(_) => Type::A as u16,
+                IpAddr::V6(_) => Type::AAAA as u16,
+            },
+            class: 1,
+            ttl: 0,
+            data: match addr {
+                IpAddr::V4(addr) => addr.octets().into(),
+                IpAddr::V6(addr) => addr.octets().into(),
+            },
+        }
+    }
+
     fn read(all_bytes: &[u8], answer_offset: usize) -> Result<(Self, usize), DnsError> {
         let (name, offset) = read_name(all_bytes, answer_offset)?;
         if offset + 10 > all_bytes.len() {
@@ -236,7 +273,6 @@ impl Answer {
         ))
     }
 
-    #[cfg(test)]
     fn write(&self, bytes: &mut [u8]) -> Result<usize, DnsError> {
         let offset = self.name.write(bytes)?;
         bytes[offset..(offset + 2)].copy_from_slice(&self.answer_type.to_be_bytes());
@@ -250,20 +286,25 @@ impl Answer {
 
 #[derive(Clone)]
 #[cfg_attr(test, derive(PartialEq, Debug))]
-pub(crate) enum Name {
+pub enum Name {
     Bytes(Vec<u8>),
+    Pointer(usize),
 }
 
 impl Name {
-    #[cfg(test)]
     fn write(&self, bytes: &mut [u8]) -> Result<usize, DnsError> {
         match self {
             Self::Bytes(vec) => write_name(vec.as_slice(), bytes),
+            Self::Pointer(offset) => {
+                bytes[0..2].copy_from_slice(
+                    &(((0b11 << 14) as u16) | ((offset & 0b111111) as u16)).to_be_bytes(),
+                );
+                Ok(2)
+            }
         }
     }
 }
 
-#[cfg(test)]
 fn write_name(name: &[u8], bytes: &mut [u8]) -> Result<usize, DnsError> {
     let name_len = name.len();
     Ok(if name_len == 0 {

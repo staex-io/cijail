@@ -7,7 +7,7 @@ use thiserror::Error;
 use crate::DnsNameError;
 
 #[derive(Error, Debug)]
-pub(crate) enum Error {
+pub enum Error {
     #[error("seccomp error: {0}")]
     Seccomp(#[from] SeccompError),
     #[error("os error: {0}")]
@@ -17,11 +17,11 @@ pub(crate) enum Error {
 }
 
 impl Error {
-    pub(crate) fn map(e: impl Display) -> Error {
+    pub fn map(e: impl Display) -> Error {
         Self::other(e.to_string())
     }
 
-    pub(crate) fn other(message: String) -> Error {
+    pub fn other(message: String) -> Error {
         Error::Os(std::io::Error::new(ErrorKind::Other, message))
     }
 }

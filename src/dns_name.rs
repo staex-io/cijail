@@ -6,11 +6,10 @@ use std::str::FromStr;
 
 // https://datatracker.ietf.org/doc/html/rfc1035
 #[cfg_attr(test, derive(Clone, Debug))]
-pub(crate) struct DnsName(String);
+pub struct DnsName(String);
 
 impl DnsName {
-    #[allow(dead_code)]
-    pub(crate) fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
 
@@ -146,7 +145,7 @@ fn is_numeric(ch: u8) -> bool {
 }
 
 #[cfg_attr(test, derive(PartialEq))]
-pub(crate) struct DnsNameError;
+pub struct DnsNameError;
 
 impl std::error::Error for DnsNameError {}
 

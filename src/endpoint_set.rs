@@ -10,13 +10,13 @@ use crate::Error;
 
 #[derive(Default)]
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
-pub(crate) struct EndpointSet {
+pub struct EndpointSet {
     socketaddrs: HashSet<SocketAddr>,
     dns_names: HashSet<DnsName>,
 }
 
 impl EndpointSet {
-    pub(crate) fn contains_any_socket_address(&self, addrs: &[SocketAddr]) -> bool {
+    pub fn contains_any_socket_address(&self, addrs: &[SocketAddr]) -> bool {
         for addr in addrs.iter() {
             if self.socketaddrs.contains(addr) {
                 return true;
@@ -25,7 +25,7 @@ impl EndpointSet {
         false
     }
 
-    pub(crate) fn contains_any_dns_name(&self, names: &[DnsName]) -> bool {
+    pub fn contains_any_dns_name(&self, names: &[DnsName]) -> bool {
         for name in names.iter() {
             if self.dns_names.contains(name) {
                 return true;
@@ -34,7 +34,7 @@ impl EndpointSet {
         false
     }
 
-    pub(crate) fn parse_no_dns_name_resolution(other: &str) -> Result<Self, Error> {
+    pub fn parse_no_dns_name_resolution(other: &str) -> Result<Self, Error> {
         Self::parse(
             other,
             ParseOptions {
@@ -43,7 +43,7 @@ impl EndpointSet {
         )
     }
 
-    pub(crate) fn parse_with_dns_name_resolution(other: &str) -> Result<Self, Error> {
+    pub fn parse_with_dns_name_resolution(other: &str) -> Result<Self, Error> {
         Self::parse(
             other,
             ParseOptions {

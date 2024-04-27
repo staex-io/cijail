@@ -23,11 +23,11 @@ use nix::unistd::Pid;
 use os_socketaddr::OsSocketAddr;
 
 use crate::socket;
-use crate::DnsName;
-use crate::DnsNameError;
-use crate::DnsPacket;
 use crate::EndpointSet;
 use crate::CIJAIL_ENDPOINTS;
+use cijail::DnsName;
+use cijail::DnsNameError;
+use cijail::DnsPacket;
 
 pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
     if caps::has_cap(None, CapSet::Effective, Capability::CAP_SYS_PTRACE)? {

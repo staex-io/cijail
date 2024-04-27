@@ -21,22 +21,14 @@ use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
-use crate::EndpointSet;
-use crate::Error;
 use crate::Logger;
+use cijail::EndpointSet;
+use cijail::Error;
 
-mod dns_name;
-mod dns_packet;
-mod endpoint_set;
-mod error;
 mod logger;
 mod socket;
 mod tracer;
 
-pub(crate) use self::dns_name::*;
-pub(crate) use self::dns_packet::*;
-pub(crate) use self::endpoint_set::*;
-pub(crate) use self::error::*;
 pub(crate) use self::logger::*;
 
 pub(crate) const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";

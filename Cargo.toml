@@ -22,6 +22,7 @@ thiserror = { version = "1.0.58", features = [], default-features = false }
 quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 rand = "0.8.5"
+test_bin = "0.4.0"
 
 [build-dependencies]
 bindgen = { version = "0.69.4", features = [], default-features = false }
