@@ -36,7 +36,7 @@ RUN curl --location --silent --fail --output /usr/bin/shfmt https://github.com/m
     chmod +x /usr/bin/shfmt
 
 RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.1.0 \
+    cijail_version=0.2.0 \
     curl \
     --silent \
     --fail \
