@@ -5,11 +5,9 @@ use std::process::Command;
 
 use test_bin::get_test_bin;
 
-/*
 mod dns_server;
 use crate::dns_server::DnsServer;
 
- TODO
 #[test]
 fn dig() {
     let (dns_server, socketaddr) =
@@ -37,7 +35,6 @@ fn dig() {
     );
     dns_server.stop();
 }
-*/
 
 #[test]
 fn read_dev_mem() {
@@ -74,7 +71,7 @@ for i in /proc/*/exe; do
         continue
     fi
     mem="$(dirname "$i")"/mem
-    cat "$mem" "$filename" >/dev/null
+    cat "$mem" >/dev/null
 done
 "#
         ),
@@ -82,7 +79,7 @@ done
     assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));
 }
 
-fn _assert_success(command: &mut Command) {
+fn assert_success(command: &mut Command) {
     match command.status() {
         Ok(status) => match status.code() {
             Some(code) if code != 0 => {

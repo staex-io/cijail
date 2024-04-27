@@ -6,9 +6,6 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitCode;
 
-use caps::errors::CapsError;
-use caps::CapSet;
-use caps::Capability;
 use clap::Parser;
 use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
@@ -53,16 +50,6 @@ fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     Ok(filter.get_notify_fd()?)
 }
 
-fn drop_capabilities() -> Result<(), CapsError> {
-    // We drop `CAP_SYS_PTRACE` capability to ensure that
-    // the tracee can't modify tracer's memory.
-    caps::drop(None, CapSet::Ambient, Capability::CAP_SYS_PTRACE)?;
-    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SETPCAP)? {
-        caps::drop(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?;
-    }
-    Ok(())
-}
-
 fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
@@ -76,7 +63,6 @@ fn spawn_tracee_process(
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
-            drop_capabilities().map_err(Error::map)?;
             set_no_new_privs()?;
             let notify_fd = install_seccomp_notify_filter()?;
             // allow the first `sendmsg` call
