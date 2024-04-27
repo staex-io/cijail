@@ -39,6 +39,9 @@ pub(crate) use self::endpoint_set::*;
 pub(crate) use self::error::*;
 pub(crate) use self::logger::*;
 
+pub(crate) const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";
+const CIJAIL_TRACER: &str = "CIJAIL_TRACER";
+
 fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     use libseccomp::*;
     let mut filter = ScmpFilterContext::new_filter(ScmpAction::Allow)?;
@@ -114,8 +117,8 @@ fn spawn_tracer_process(
         .next()
         .ok_or_else(|| Error::map("can not find zeroth argument"))?;
     let mut child = Command::new(arg0.clone());
-    child.env("CIJAIL_TRACER", "1");
-    child.env("CIJAIL_ALLOWED_ENDPOINTS", allowed_endpoints.to_string());
+    child.env(CIJAIL_TRACER, "1");
+    child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_string());
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -150,7 +153,7 @@ struct Args {
 
 fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     Logger::init().map_err(|_| "failed to set logger")?;
-    if std::env::var_os("CIJAIL_TRACER").is_some() {
+    if std::env::var_os(CIJAIL_TRACER).is_some() {
         return tracer::main(0);
     }
     let args = Args::parse();
@@ -160,7 +163,7 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         return Ok(ExitCode::SUCCESS);
     }
     // resolve DNS names *before* the tracee process is spawned
-    let allowed_endpoints: EndpointSet = match std::env::var("CIJAIL_ALLOWED_ENDPOINTS") {
+    let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(endpoints) => EndpointSet::parse_with_dns_name_resolution(endpoints.as_str())?,
         Err(_) => Default::default(),
     };

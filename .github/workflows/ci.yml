@@ -12,7 +12,7 @@ jobs:
       options: --cap-add CAP_SYS_PTRACE
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CIJAIL_ALLOWED_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
+      CIJAIL_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
         pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
         lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
         151.101.44.223:443 lb-140-82-113-4-iad.github.com:443

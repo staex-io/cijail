@@ -21,7 +21,7 @@ Cijail will print all IP addresses, ports nad domain names that it blocked
 as well as the corresponding system calls.
 The output looks like the following.
 ```
-$ env CIJAIL_ALLOWED_ENDPOINTS='one.one.one.one:53' \
+$ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
       cijail \
       dig staex.io @1.1.1.1
 [Sun Apr 04 17:28:22 2024] cijail: allow connect 1.1.1.1:53
@@ -57,7 +57,7 @@ jobs:
       image: your-image-with-cijail-installed-as-entrypoint
       options: --cap-add CAP_SYS_PTRACE
     env:
-      CIJAIL_ALLOWED_ENDPOINTS: github.com:443
+      CIJAIL_ENDPOINTS: github.com:443
     steps:
       - name: Lint
         run: cijail ./ci/lint.sh
@@ -77,7 +77,7 @@ Add the following lines to your `.gitlab-ci.yml`.
 
 ```yaml
 variables:
-  CIJAIL_ALLOWED_ENDPOINTS: gitlab.com:443
+  CIJAIL_ENDPOINTS: gitlab.com:443
 ```
 
 ✅ Gitlab CI/CD pipelines respect Docker's `ENTRYPOINT`,

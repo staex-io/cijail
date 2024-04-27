@@ -5,7 +5,7 @@ use std::hash::Hasher;
 use std::str::FromStr;
 
 // https://datatracker.ietf.org/doc/html/rfc1035
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(test, derive(Clone, Debug))]
 pub(crate) struct DnsName(String);
 
 impl DnsName {
@@ -331,8 +331,6 @@ mod tests {
 
     impl Arbitrary for ArbitraryDnsLabel {
         fn arbitrary(_: &mut quickcheck::Gen) -> Self {
-            const LABEL_ALPHABET: &[u8; 63] =
-                b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
             let mut prng = rand::thread_rng();
             let label_len: usize = prng.gen_range(1..(2 * MAX_LABEL_LEN));
             let mut name = String::with_capacity(label_len);
@@ -358,4 +356,38 @@ mod tests {
             Self(labels.join("."))
         }
     }
+
+    impl Arbitrary for DnsName {
+        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+            let mut prng = rand::thread_rng();
+            let num_labels: usize = prng.gen_range(1..3);
+            let mut labels: Vec<String> = Vec::with_capacity(num_labels);
+            for _ in 0..num_labels {
+                let mut label = ArbitraryDnsLabel::arbitrary(g).0;
+                label.truncate(MAX_LABEL_LEN - 2);
+                match label.as_bytes().iter().next() {
+                    Some(ch) if ch.is_ascii_digit() || ch == &b'-' => {
+                        let i: usize = prng.gen_range(0..LABEL_REDUCED_ALPHABET.len());
+                        label.insert(0, LABEL_REDUCED_ALPHABET[i] as char);
+                    }
+                    None => {
+                        let i: usize = prng.gen_range(0..LABEL_REDUCED_ALPHABET.len());
+                        label.push(LABEL_REDUCED_ALPHABET[i] as char);
+                    }
+                    _ => {}
+                }
+                if label.as_bytes().last() == Some(&b'-') {
+                    let i: usize = prng.gen_range(0..LABEL_REDUCED_ALPHABET.len());
+                    label.push(LABEL_REDUCED_ALPHABET[i] as char);
+                }
+                labels.push(label);
+            }
+            Self(labels.join("."))
+        }
+    }
+
+    const LABEL_ALPHABET: &[u8; 63] =
+        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-";
+    const LABEL_REDUCED_ALPHABET: &[u8; 52] =
+        b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 }
