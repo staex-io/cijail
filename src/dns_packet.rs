@@ -1,9 +1,12 @@
 use std::net::IpAddr;
+
 use thiserror::Error;
 
 const MAX_LABEL_LEN: usize = 63;
 const MAX_NAME_LEN: usize = 255;
 const HEADER_SIZE: usize = 12;
+const MIN_QUESTION_SIZE: usize = 4;
+const MIN_ANSWER_SIZE: usize = 10;
 
 #[derive(Error, Debug)]
 pub enum DnsError {
@@ -72,8 +75,34 @@ impl DnsPacket {
         Ok(offset)
     }
 
+    pub fn read_questions_only(bytes: &[u8]) -> Result<(Self, usize), DnsError> {
+        Self::do_read(
+            bytes,
+            ReadOptions {
+                questions_only: true,
+            },
+        )
+    }
+
     pub fn read(bytes: &[u8]) -> Result<(Self, usize), DnsError> {
-        let header = DnsHeader::read(bytes)?;
+        Self::do_read(
+            bytes,
+            ReadOptions {
+                questions_only: false,
+            },
+        )
+    }
+
+    fn do_read(bytes: &[u8], options: ReadOptions) -> Result<(Self, usize), DnsError> {
+        let mut header = DnsHeader::read(bytes)?;
+        if options.questions_only {
+            header.num_answers = 0;
+            header.num_authority = 0;
+            header.num_additional = 0;
+        }
+        if header.min_packet_size() > bytes.len() {
+            return Err(DnsError::TooSmall);
+        }
         let mut questions: Vec<Question> = Vec::with_capacity(header.num_questions as usize);
         let mut answers: Vec<Answer> = Vec::with_capacity(header.num_answers as usize);
         let mut authorities: Vec<Answer> = Vec::with_capacity(header.num_authority as usize);
@@ -106,6 +135,10 @@ impl DnsPacket {
             offset,
         ))
     }
+}
+
+struct ReadOptions {
+    questions_only: bool,
 }
 
 #[cfg_attr(test, derive(Clone, PartialEq, Debug))]
@@ -165,6 +198,15 @@ impl DnsHeader {
         bytes[6..8].copy_from_slice(&self.num_answers.to_be_bytes());
         bytes[8..10].copy_from_slice(&self.num_authority.to_be_bytes());
         bytes[10..12].copy_from_slice(&self.num_additional.to_be_bytes());
+    }
+
+    fn min_packet_size(&self) -> usize {
+        HEADER_SIZE
+            + MIN_QUESTION_SIZE * self.num_questions as usize
+            + MIN_ANSWER_SIZE
+                * (self.num_answers as usize
+                    + self.num_authority as usize
+                    + self.num_additional as usize)
     }
 
     pub fn set_response(&mut self) {

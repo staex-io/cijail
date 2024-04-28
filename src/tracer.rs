@@ -244,7 +244,8 @@ impl Context {
         dns_names: &mut Vec<DnsName>,
     ) -> Result<(), std::io::Error> {
         let bytes = self.read_bytes(base, len)?;
-        if let Ok((packet, _)) = DnsPacket::read(bytes.as_slice()) {
+        let bytes = &bytes[..bytes.len().min(MAX_DNS_PACKET_SIZE)];
+        if let Ok((packet, _)) = DnsPacket::read_questions_only(bytes) {
             for question in packet.questions {
                 if let Ok(name) = from_utf8(question.name.as_slice()) {
                     if let Ok(dns_name) = DnsName::parse_no_punycode(name) {
@@ -364,3 +365,6 @@ impl Context {
         self.validate()
     }
 }
+
+/// A value that is large enough to hold any DNS/EDNS packet.
+const MAX_DNS_PACKET_SIZE: usize = 4096;
