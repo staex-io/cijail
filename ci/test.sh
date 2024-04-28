@@ -5,6 +5,11 @@ clean() {
     find target -type f -name '*.profraw' -delete || true
 }
 
+# shellcheck disable=SC2046
+unset_cijail_variables() {
+    unset $(env | cut -d= -f1 | grep '^CIJAIL_')
+}
+
 # shellcheck disable=SC1091
 test_coverage_preamble() {
     cargo llvm-cov show-env --export-prefix >.llvm-cov-env
@@ -36,6 +41,7 @@ test_all() {
 
 set -ex
 clean
+unset_cijail_variables
 test_coverage_preamble
 test_all
 test_coverage_postamble
