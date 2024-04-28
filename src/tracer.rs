@@ -22,7 +22,6 @@ use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
-use log::error;
 use log::info;
 use nix::errno::Errno;
 use nix::fcntl::readlink;
@@ -62,82 +61,12 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
         let request = ScmpNotifReq::receive(notify_fd)?;
         let context = Context { notify_fd, request };
         context.validate()?;
-        let syscall = request.data.syscall.get_name()?;
-        match syscall.as_str() {
-            "connect" => {
-                context.read_socket_addr(
-                    request.data.args[1] as usize,
-                    request.data.args[2] as u32,
-                    &mut sockaddrs,
-                )?;
-            }
-            "sendto" => {
-                context.read_socket_addr(
-                    request.data.args[4] as usize,
-                    request.data.args[5] as u32,
-                    &mut sockaddrs,
-                )?;
-                context.read_dns_packet(
-                    request.data.args[1] as usize,
-                    request.data.args[2] as usize,
-                    &mut dns_names,
-                )?;
-            }
-            "sendmsg" => {
-                context.read_msghdr(
-                    request.data.args[1] as usize,
-                    &mut dns_names,
-                    &mut sockaddrs,
-                )?;
-            }
-            "sendmmsg" => context.read_mmsghdr(
-                request.data.args[1] as usize,
-                request.data.args[2] as usize,
-                &mut dns_names,
-                &mut sockaddrs,
-            )?,
-            "write" | "send" => {
-                let fd = request.data.args[0] as RawFd;
-                let filename = format!("/proc/{}/fd/{}", request.pid, fd);
-                context.check_path(filename.as_bytes(), &prohibited_files, &mut denied_paths)?;
-                context.read_dns_packet(
-                    request.data.args[1] as usize,
-                    request.data.args[2] as usize,
-                    &mut dns_names,
-                )?;
-            }
-            "open" => {
-                let path = context.read_path(request.data.args[0] as usize)?;
-                context.check_path(path.as_slice(), &prohibited_files, &mut denied_paths)?;
-            }
-            "openat" => {
-                let path = context.read_path(request.data.args[1] as usize)?;
-                let dirfd = request.data.args[0] as i32;
-                if path.first() == Some(&b'/') {
-                    context.check_path(path.as_slice(), &prohibited_files, &mut denied_paths)?;
-                } else if dirfd == AT_FDCWD {
-                    let mut new_path = readlink(format!("/proc/{}/cwd", request.pid).as_str())?
-                        .into_encoded_bytes();
-                    new_path.push(b'/');
-                    new_path.extend(path);
-                    context.check_path(
-                        new_path.as_slice(),
-                        &prohibited_files,
-                        &mut denied_paths,
-                    )?;
-                } else {
-                    let mut new_path = format!("/proc/{}/{}", request.pid, dirfd).into_bytes();
-                    new_path.push(b'/');
-                    new_path.extend(path);
-                    context.check_path(
-                        new_path.as_slice(),
-                        &prohibited_files,
-                        &mut denied_paths,
-                    )?;
-                }
-            }
-            _ => {}
-        }
+        let syscall = context.handle_syscall(
+            &mut dns_names,
+            &mut sockaddrs,
+            &mut denied_paths,
+            &prohibited_files,
+        )?;
         let response = if (sockaddrs.is_empty()
             || allowed_endpoints.contains_any_socket_address(sockaddrs.as_slice()))
             && (dns_names.is_empty()
@@ -206,6 +135,86 @@ impl Context {
             .map_err(|e| std::io::Error::new(ErrorKind::Other, e.to_string()))
     }
 
+    fn handle_syscall(
+        &self,
+        dns_names: &mut Vec<DnsName>,
+        sockaddrs: &mut Vec<SocketAddr>,
+        denied_paths: &mut Vec<PathBuf>,
+        prohibited_files: &HashSet<ProhibitedFile>,
+    ) -> Result<String, std::io::Error> {
+        let syscall = self
+            .request
+            .data
+            .syscall
+            .get_name()
+            .map_err(|e| std::io::Error::new(ErrorKind::Other, e.to_string()))?;
+        match syscall.as_str() {
+            "connect" => {
+                self.read_socket_addr(
+                    self.request.data.args[1] as usize,
+                    self.request.data.args[2] as u32,
+                    sockaddrs,
+                )?;
+            }
+            "sendto" => {
+                self.read_socket_addr(
+                    self.request.data.args[4] as usize,
+                    self.request.data.args[5] as u32,
+                    sockaddrs,
+                )?;
+                self.read_dns_packet(
+                    self.request.data.args[1] as usize,
+                    self.request.data.args[2] as usize,
+                    dns_names,
+                )?;
+            }
+            "sendmsg" => {
+                self.read_msghdr(self.request.data.args[1] as usize, dns_names, sockaddrs)?;
+            }
+            "sendmmsg" => self.read_mmsghdr(
+                self.request.data.args[1] as usize,
+                self.request.data.args[2] as usize,
+                dns_names,
+                sockaddrs,
+            )?,
+            "write" | "send" => {
+                let fd = self.request.data.args[0] as RawFd;
+                let filename = format!("/proc/{}/fd/{}", self.request.pid, fd);
+                self.check_path(filename.as_bytes(), prohibited_files, denied_paths)?;
+                self.read_dns_packet(
+                    self.request.data.args[1] as usize,
+                    self.request.data.args[2] as usize,
+                    dns_names,
+                )?;
+            }
+            "open" => {
+                let path = self.read_path(self.request.data.args[0] as usize)?;
+                self.check_path(path.as_slice(), prohibited_files, denied_paths)?;
+            }
+            "openat" => {
+                let path = self.read_path(self.request.data.args[1] as usize)?;
+                let dirfd = self.request.data.args[0] as i32;
+                if path.first() == Some(&b'/') {
+                    self.check_path(path.as_slice(), prohibited_files, denied_paths)?;
+                } else if dirfd == AT_FDCWD {
+                    let mut new_path =
+                        readlink(format!("/proc/{}/cwd", self.request.pid).as_str())?
+                            .into_encoded_bytes();
+                    new_path.push(b'/');
+                    new_path.extend(path);
+                    self.check_path(new_path.as_slice(), prohibited_files, denied_paths)?;
+                } else {
+                    let mut new_path = format!("/proc/{}/{}", self.request.pid, dirfd).into_bytes();
+                    new_path.push(b'/');
+                    new_path.extend(path);
+                    self.check_path(new_path.as_slice(), prohibited_files, denied_paths)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(syscall)
+    }
+
     fn read_bytes(&self, base: usize, len: usize) -> Result<Vec<u8>, std::io::Error> {
         let mut buf = vec![0_u8; len];
         self.read_memory(base, len, &mut buf)?;
@@ -237,14 +246,10 @@ impl Context {
         let bytes = self.read_bytes(base, len)?;
         if let Ok((packet, _)) = DnsPacket::read(bytes.as_slice()) {
             for question in packet.questions {
-                match from_utf8(question.name.as_slice()) {
-                    Ok(name) => match name.parse::<DnsName>() {
-                        Ok(dns_name) => dns_names.push(dns_name),
-                        Err(e) => {
-                            error!("failed to parse DNS name `{}`: {}", name, e);
-                        }
-                    },
-                    Err(e) => error!("failed to read DNS name: {}", e),
+                if let Ok(name) = from_utf8(question.name.as_slice()) {
+                    if let Ok(dns_name) = name.parse::<DnsName>() {
+                        dns_names.push(dns_name);
+                    }
                 }
             }
         }
@@ -338,7 +343,7 @@ impl Context {
         let file_status = stat(path);
         self.validate()?;
         match file_status {
-            Err(Errno::ENOENT) => Ok(()),
+            Err(Errno::ENOENT) | Err(Errno::ENOTDIR) => Ok(()),
             Err(e) => Err(e.into()),
             Ok(stat) => {
                 let file = ProhibitedFile::from_stat(stat);
