@@ -181,11 +181,13 @@ impl Context {
                 let fd = self.request.data.args[0] as RawFd;
                 let filename = format!("/proc/{}/fd/{}", self.request.pid, fd);
                 self.check_path(filename.as_bytes(), prohibited_files, denied_paths)?;
-                self.read_dns_packet(
-                    self.request.data.args[1] as usize,
-                    self.request.data.args[2] as usize,
-                    dns_names,
-                )?;
+                if self.is_socket(fd)? {
+                    self.read_dns_packet(
+                        self.request.data.args[1] as usize,
+                        self.request.data.args[2] as usize,
+                        dns_names,
+                    )?;
+                }
             }
             "open" => {
                 let path = self.read_path(self.request.data.args[0] as usize)?;
@@ -356,6 +358,15 @@ impl Context {
         }
     }
 
+    fn is_socket(&self, fd: RawFd) -> Result<bool, std::io::Error> {
+        let path = format!("/proc/{}/fd/{}", self.request.pid, fd);
+        match readlink(path.as_str()) {
+            Err(Errno::ENOENT) | Err(Errno::ENOTDIR) => Ok(false),
+            Err(e) => Err(e.into()),
+            Ok(target) => Ok(target.into_encoded_bytes().starts_with(SOCKET_PREFIX)),
+        }
+    }
+
     fn read_memory(&self, base: usize, len: usize, buf: &mut [u8]) -> Result<(), std::io::Error> {
         process_vm_readv(
             Pid::from_raw(self.request.pid as i32),
@@ -368,3 +379,4 @@ impl Context {
 
 /// A value that is large enough to hold any DNS/EDNS packet.
 const MAX_DNS_PACKET_SIZE: usize = 4096;
+const SOCKET_PREFIX: &[u8] = b"socket:";
