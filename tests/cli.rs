@@ -71,18 +71,28 @@ fn read_proc_mem() {
         format!(
             r#"
 set -e
+not_found=1
 for i in /proc/*/exe; do
     filename="$(readlink "$i" || true)"
     if ! expr "$filename" : '.*cijail$' >/dev/null; then
         continue
     fi
+    not_found=0
     mem="$(dirname "$i")"/mem
+    echo "$mem" "$filename" >&2
     cat "$mem" >/dev/null
 done
+exit $not_found
 "#
         ),
     ];
     assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));
+}
+
+#[test]
+fn capabilities() {
+    let test_caps = get_test_binary_path("test-caps");
+    assert_success(get_test_bin("cijail").args([test_caps]));
 }
 
 fn assert_success(command: &mut Command) {
@@ -135,4 +145,9 @@ fn get_args(command: &Command) -> String {
     args.push(command.get_program().to_string_lossy().to_string());
     args.extend(command.get_args().map(|x| x.to_string_lossy().to_string()));
     args.join(" ")
+}
+
+fn get_test_binary_path(name: &str) -> String {
+    let command = get_test_bin(name);
+    command.get_program().to_string_lossy().to_string()
 }

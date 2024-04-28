@@ -7,6 +7,9 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitCode;
 
+use caps::errors::CapsError;
+use caps::CapSet;
+use caps::Capability;
 use cijail::EndpointSet;
 use cijail::Error;
 use clap::Parser;
@@ -17,6 +20,7 @@ use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
 use log::error;
+use log::info;
 use nix::sys::prctl::set_no_new_privs;
 use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
@@ -54,6 +58,25 @@ fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
     Ok(filter.get_notify_fd()?)
 }
 
+fn drop_capabilities() -> Result<(), CapsError> {
+    if caps::has_cap(None, CapSet::Effective, Capability::CAP_SETPCAP)?
+        && caps::has_cap(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?
+    {
+        info!(
+            "dropping CAP_SYS_PTRACE from the {:?} set",
+            CapSet::Bounding
+        );
+        caps::drop(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?;
+    }
+    for set in [CapSet::Effective, CapSet::Inheritable, CapSet::Ambient] {
+        if caps::has_cap(None, set, Capability::CAP_SYS_PTRACE)? {
+            info!("dropping CAP_SYS_PTRACE from the {:?} set", set);
+            caps::drop(None, set, Capability::CAP_SYS_PTRACE)?;
+        }
+    }
+    Ok(())
+}
+
 fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
@@ -67,6 +90,9 @@ fn spawn_tracee_process(
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
+            drop_capabilities().map_err(|_| {
+                std::io::Error::new(ErrorKind::Other, "failed to drop capabilities")
+            })?;
             set_no_new_privs()?;
             let notify_fd = install_seccomp_notify_filter()?;
             // allow the first `sendmsg` call
