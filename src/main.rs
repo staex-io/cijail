@@ -6,6 +6,8 @@ use std::process::Child;
 use std::process::Command;
 use std::process::ExitCode;
 
+use cijail::EndpointSet;
+use cijail::Error;
 use clap::Parser;
 use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
@@ -13,14 +15,13 @@ use libseccomp::ScmpFd;
 use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
+use log::error;
 use nix::sys::prctl::set_no_new_privs;
 use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
 use crate::Logger;
-use cijail::EndpointSet;
-use cijail::Error;
 
 mod logger;
 mod socket;
@@ -84,13 +85,12 @@ fn spawn_tracee_process(
         })
     };
     let child = child.spawn().map_err(move |e| {
-        let arg0 = arg0.to_string_lossy();
-        let args = args
-            .iter()
-            .map(|x| x.to_string_lossy())
+        let args = [arg0.to_string_lossy()]
+            .into_iter()
+            .chain(args.iter().map(|x| x.to_string_lossy()))
             .collect::<Vec<_>>()
             .join(" ");
-        format!("failed to run `{} {}`: {}", arg0, args, e)
+        format!("failed to run `{}`: {}", args, e)
     })?;
     Ok(child)
 }
@@ -139,6 +139,16 @@ struct Args {
 
 fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     Logger::init().map_err(|_| "failed to set logger")?;
+    match do_main() {
+        Ok(code) => Ok(code),
+        Err(e) => {
+            error!("{}", e);
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     if std::env::var_os(CIJAIL_TRACER).is_some() {
         return tracer::main(0);
     }
