@@ -247,7 +247,7 @@ impl Context {
         if let Ok((packet, _)) = DnsPacket::read(bytes.as_slice()) {
             for question in packet.questions {
                 if let Ok(name) = from_utf8(question.name.as_slice()) {
-                    if let Ok(dns_name) = name.parse::<DnsName>() {
+                    if let Ok(dns_name) = DnsName::parse_no_punycode(name) {
                         dns_names.push(dns_name);
                     }
                 }
