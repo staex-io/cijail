@@ -1,5 +1,6 @@
 use std::ffi::c_int;
 use std::ffi::OsString;
+use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Child;
@@ -30,6 +31,7 @@ mod tracer;
 pub(crate) use self::logger::*;
 
 pub(crate) const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";
+const CIJAIL_DRY_RUN: &str = "CIJAIL_DRY_RUN";
 const CIJAIL_TRACER: &str = "CIJAIL_TRACER";
 
 fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
@@ -98,6 +100,7 @@ fn spawn_tracee_process(
 fn spawn_tracer_process(
     socket: SocketpairStream,
     allowed_endpoints: EndpointSet,
+    is_dry_run: bool,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let arg0 = std::env::args_os()
         .next()
@@ -105,6 +108,7 @@ fn spawn_tracer_process(
     let mut child = Command::new(arg0.clone());
     child.env(CIJAIL_TRACER, "1");
     child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_string());
+    child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -132,6 +136,9 @@ struct Args {
     /// Print version.
     #[clap(long, action)]
     version: bool,
+    /// Do not enforce restrictions, but print all decisions.
+    #[clap(long, action)]
+    dry_run: bool,
     /// Command to run.
     #[arg(allow_hyphen_values = true)]
     command: Vec<OsString>,
@@ -149,8 +156,12 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
 }
 
 fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let is_dry_run: bool = match std::env::var(CIJAIL_DRY_RUN) {
+        Ok(value) => str_to_bool(value.as_str())?,
+        Err(_) => false,
+    };
     if std::env::var_os(CIJAIL_TRACER).is_some() {
-        return tracer::main(0);
+        return tracer::main(0, is_dry_run);
     }
     let args = Args::parse();
     if args.version {
@@ -165,14 +176,14 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     let (socket0, socket1) = socketpair_stream()?;
     let mut tracee = spawn_tracee_process(socket0, args.command)?;
-    let mut tracer = spawn_tracer_process(socket1, allowed_endpoints)?;
+    let mut tracer = spawn_tracer_process(socket1, allowed_endpoints, is_dry_run || args.dry_run)?;
     let status = tracee.wait()?;
     tracer.kill()?;
     tracer.wait()?;
     Ok(match status.code() {
-        Some(code) => (code as u8).into(),
+        Some(code) => (if is_dry_run { 99 } else { code as u8 }).into(),
         None => {
-            eprintln!("terminated by signal");
+            error!("terminated by signal");
             ExitCode::FAILURE
         }
     })
@@ -183,5 +194,25 @@ fn check(ret: c_int) -> Result<c_int, std::io::Error> {
         Err(std::io::Error::last_os_error())
     } else {
         Ok(ret)
+    }
+}
+
+fn str_to_bool(s: &str) -> Result<bool, std::io::Error> {
+    let s = s.trim();
+    match s {
+        "0" => Ok(false),
+        "1" => Ok(true),
+        _ => Err(std::io::Error::new(
+            ErrorKind::Other,
+            format!("invalid boolean: `{}`", s),
+        )),
+    }
+}
+
+fn bool_to_str(value: bool) -> &'static str {
+    if value {
+        "1"
+    } else {
+        "0"
     }
 }
