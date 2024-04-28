@@ -1,3 +1,5 @@
+use bincode::Decode;
+use bincode::Encode;
 use std::fmt::Debug;
 use std::fmt::Display;
 use std::hash::Hash;
@@ -5,7 +7,8 @@ use std::hash::Hasher;
 use std::str::FromStr;
 
 // https://datatracker.ietf.org/doc/html/rfc1035
-#[cfg_attr(test, derive(Clone, Debug))]
+#[derive(Clone, Encode, Decode)]
+#[cfg_attr(test, derive(Debug))]
 pub struct DnsName(String);
 
 impl DnsName {

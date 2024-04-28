@@ -1,10 +1,12 @@
 [package]
 name = "cijail"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 publish = false
 
 [dependencies]
+base64 = { version = "0.22.0", features = ["std"], default-features = false }
+bincode = { version = "2.0.0-rc.3", features = ["std", "derive"], default-features = false }
 chrono = { version = "0.4.38", features = ["alloc", "clock"], default-features = false }
 clap = { version = "4.5.4", features = ["std", "derive", "help", "usage"], default-features = false }
 libc = { version = "0.2.153", features = ["std"], default-features = false }

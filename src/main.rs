@@ -109,7 +109,7 @@ fn spawn_tracer_process(
         .ok_or_else(|| Error::map("can not find zeroth argument"))?;
     let mut child = Command::new(arg0.clone());
     child.env(CIJAIL_TRACER, "1");
-    child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_string());
+    child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_base64()?);
     child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
     child.env(CIJAIL_ALLOW_LOOPBACK, bool_to_str(allow_loopback));
     unsafe {
