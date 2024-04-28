@@ -31,6 +31,12 @@ fn dig() {
     assert_success(
         get_test_bin("cijail")
             .env("CIJAIL_ENDPOINTS", format!("{} name.tld", socketaddr))
+            .args(dig_args.clone()),
+    );
+    assert_success(
+        get_test_bin("cijail")
+            .env("CIJAIL_ENDPOINTS", "name.tld")
+            .env("CIJAIL_ALLOW_LOOPBACK", "1")
             .args(dig_args),
     );
     dns_server.stop();

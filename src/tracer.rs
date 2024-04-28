@@ -39,6 +39,7 @@ use crate::CIJAIL_ENDPOINTS;
 pub(crate) fn main(
     notify_fd: RawFd,
     is_dry_run: bool,
+    allow_loopback: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
@@ -70,6 +71,9 @@ pub(crate) fn main(
             &mut denied_paths,
             &prohibited_files,
         )?;
+        if allow_loopback {
+            sockaddrs.retain(|sockaddr| !sockaddr.ip().is_loopback());
+        }
         let response = if (sockaddrs.is_empty()
             || allowed_endpoints.contains_any_socket_address(sockaddrs.as_slice()))
             && (dns_names.is_empty()
