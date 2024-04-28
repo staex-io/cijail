@@ -32,6 +32,7 @@ pub(crate) use self::logger::*;
 
 pub(crate) const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";
 const CIJAIL_DRY_RUN: &str = "CIJAIL_DRY_RUN";
+const CIJAIL_ALLOW_LOOPBACK: &str = "CIJAIL_ALLOW_LOOPBACK";
 const CIJAIL_TRACER: &str = "CIJAIL_TRACER";
 
 fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
@@ -101,6 +102,7 @@ fn spawn_tracer_process(
     socket: SocketpairStream,
     allowed_endpoints: EndpointSet,
     is_dry_run: bool,
+    allow_loopback: bool,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let arg0 = std::env::args_os()
         .next()
@@ -109,6 +111,7 @@ fn spawn_tracer_process(
     child.env(CIJAIL_TRACER, "1");
     child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_string());
     child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
+    child.env(CIJAIL_ALLOW_LOOPBACK, bool_to_str(allow_loopback));
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -136,9 +139,13 @@ struct Args {
     /// Print version.
     #[clap(long, action)]
     version: bool,
-    /// Do not enforce restrictions, but print all decisions.
+    /// Do not enforce restrictions, but print all decisions (overrides CIJAIL_DRY_RUN environment variable).
     #[clap(long, action)]
     dry_run: bool,
+    /// Allow to connect to any address and port in the loopback network (overrides
+    /// CIJAIL_ALLOW_LOOPBACK environment variable).
+    #[clap(long, action)]
+    allow_loopback: bool,
     /// Command to run.
     #[arg(allow_hyphen_values = true)]
     command: Vec<OsString>,
@@ -156,12 +163,10 @@ fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
 }
 
 fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let is_dry_run: bool = match std::env::var(CIJAIL_DRY_RUN) {
-        Ok(value) => str_to_bool(value.as_str())?,
-        Err(_) => false,
-    };
+    let is_dry_run = env_to_bool(CIJAIL_DRY_RUN)?;
+    let allow_loopback = env_to_bool(CIJAIL_ALLOW_LOOPBACK)?;
     if std::env::var_os(CIJAIL_TRACER).is_some() {
-        return tracer::main(0, is_dry_run);
+        return tracer::main(0, is_dry_run, allow_loopback);
     }
     let args = Args::parse();
     if args.version {
@@ -176,7 +181,12 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     };
     let (socket0, socket1) = socketpair_stream()?;
     let mut tracee = spawn_tracee_process(socket0, args.command)?;
-    let mut tracer = spawn_tracer_process(socket1, allowed_endpoints, is_dry_run || args.dry_run)?;
+    let mut tracer = spawn_tracer_process(
+        socket1,
+        allowed_endpoints,
+        is_dry_run || args.dry_run,
+        allow_loopback || args.allow_loopback,
+    )?;
     let status = tracee.wait()?;
     tracer.kill()?;
     tracer.wait()?;
@@ -194,6 +204,13 @@ fn check(ret: c_int) -> Result<c_int, std::io::Error> {
         Err(std::io::Error::last_os_error())
     } else {
         Ok(ret)
+    }
+}
+
+fn env_to_bool(name: &str) -> Result<bool, std::io::Error> {
+    match std::env::var(name) {
+        Ok(value) => str_to_bool(value.as_str()),
+        Err(_) => Ok(false),
     }
 }
 

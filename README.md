@@ -28,9 +28,15 @@ $ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
 [Sun Apr 04 17:28:22 2024] cijail: deny sendmmsg staex.io
 ```
 
-Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
-Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
-Dry run always fails.
+- Use `CIJAIL_ENDPOINTS` to restrict which endpoints are allowed to be sent traffic to.
+  These can be DNS names (i.e. allow only name resolution, but not the traffic),
+  DNS names plus port, IP address plus port.
+- Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
+  Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
+  Dry run always fails.
+- Use `CIJAIL_ALLOW_LOOPBACK=1` to allow sending any traffic to any address and port
+  in the loopback network
+  (`127.0.0.1/8` and `::1`).
 
 ## Use in Github Actions
 
@@ -101,3 +107,7 @@ To do that add the following lines to `/etc/gitlab-runner/config.toml`.
 # Caveats
 
 - You can not run `cijail` inside another `cijail`. We are investigating the issue.
+- Cijail **must be** the first process that you run in the Docker container
+  because it controls only its descendants.
+  Usually this is not a problem in CI/CD,
+  but on the local computer something like [NSCD](https://man7.org/linux/man-pages/man8/nscd.8.html) can easily circumvent the jail.
