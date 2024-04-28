@@ -13,7 +13,6 @@ jobs:
     env:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
-      RUST_TEST_TIME_INTEGRATION: 30,60
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       CIJAIL_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
         pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443

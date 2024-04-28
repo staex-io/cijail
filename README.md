@@ -34,7 +34,7 @@ Add the following lines to your `Dockerfile`.
 
 ```dockerfile
 RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.2.0 \
+    cijail_version=0.2.4 \
     && curl \
     --silent \
     --fail \
@@ -92,3 +92,8 @@ To do that add the following lines to `/etc/gitlab-runner/config.toml`.
   [runners.docker]
     cap_add = ["SYS_PTRACE"]
 ```
+
+
+# Caveats
+
+- You can not run `cijail` inside another `cijail`. We are investigating the issue.
