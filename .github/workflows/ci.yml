@@ -5,7 +5,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail-ci:latest@sha256:ceb8ab2b9a9982d5901e251f997c14295bdab0bba398a142e40a626c569a47e3
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:13c550b4e37ddc234167a48b202af4a25667b22160cd596982dee403cca7e6e0
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
@@ -18,7 +18,7 @@ jobs:
         pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
         lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
         151.101.44.223:443 lb-140-82-113-4-iad.github.com:443 api.github.com:443 uploads.github.com:443
-        lb-140-82-116-14-sea.github.com:443 lb-140-82-112-13-iad.github.com:443
+        lb-140-82-116-14-sea.github.com:443 lb-140-82-112-13-iad.github.com:443 lb-140-82-114-3-iad.github.com:443
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.4
