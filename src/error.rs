@@ -14,6 +14,12 @@ pub enum Error {
     Os(#[from] std::io::Error),
     #[error("dns name error: {0}")]
     DnsName(#[from] DnsNameError),
+    #[error("bincode error: {0}")]
+    BincodeEncode(bincode::error::EncodeError),
+    #[error("bincode error: {0}")]
+    BincodeDecode(bincode::error::DecodeError),
+    #[error("base64 error: {0}")]
+    Base64Decode(base64::DecodeError),
 }
 
 impl Error {
@@ -32,5 +38,23 @@ impl From<Error> for std::io::Error {
             Error::Os(error) => error,
             other => std::io::Error::new(ErrorKind::Other, other.to_string()),
         }
+    }
+}
+
+impl From<bincode::error::EncodeError> for Error {
+    fn from(other: bincode::error::EncodeError) -> Self {
+        Self::map(other)
+    }
+}
+
+impl From<bincode::error::DecodeError> for Error {
+    fn from(other: bincode::error::DecodeError) -> Self {
+        Self::map(other)
+    }
+}
+
+impl From<base64::DecodeError> for Error {
+    fn from(other: base64::DecodeError) -> Self {
+        Self::map(other)
     }
 }

@@ -42,7 +42,7 @@ pub(crate) fn main(
     allow_loopback: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
-        Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
+        Ok(string) => EndpointSet::from_base64(string.as_str())?,
         Err(_) => Default::default(),
     };
     let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
@@ -101,7 +101,10 @@ pub(crate) fn main(
             )?;
             write!(&mut buf, " {}", syscall)?;
             for addr in sockaddrs.iter() {
-                write!(&mut buf, " {}", addr)?;
+                match allowed_endpoints.resolve_socketaddr(addr) {
+                    Some(dns_name) => write!(&mut buf, " {}:{}", dns_name, addr.port())?,
+                    None => write!(&mut buf, " {}", addr)?,
+                }
             }
             for name in dns_names.iter() {
                 write!(&mut buf, " {}", name)?;
