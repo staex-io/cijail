@@ -18,7 +18,7 @@ jobs:
         pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
         lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
         151.101.44.223:443 lb-140-82-113-4-iad.github.com:443 api.github.com:443 uploads.github.com:443
-        lb-140-82-116-14-sea.github.com:443
+        lb-140-82-116-14-sea.github.com:443 lb-140-82-112-13-iad.github.com:443
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.4
@@ -31,4 +31,4 @@ jobs:
       - name: Build
         run: cijail ./ci/binaries.sh
       - name: Release
-        run: cijail ./ci/release.sh
+        run: ./ci/release.sh
