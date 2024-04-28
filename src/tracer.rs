@@ -36,7 +36,10 @@ use crate::socket;
 use crate::EndpointSet;
 use crate::CIJAIL_ENDPOINTS;
 
-pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Error>> {
+pub(crate) fn main(
+    notify_fd: RawFd,
+    is_dry_run: bool,
+) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::parse_no_dns_name_resolution(string.as_str())?,
         Err(_) => Default::default(),
@@ -84,6 +87,9 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
         };
         if !sockaddrs.is_empty() || !dns_names.is_empty() || !denied_paths.is_empty() {
             let mut buf = String::with_capacity(4096);
+            if is_dry_run {
+                write!(&mut buf, "DRYRUN ")?;
+            }
             write!(
                 &mut buf,
                 "{}",
@@ -101,7 +107,12 @@ pub(crate) fn main(notify_fd: RawFd) -> Result<ExitCode, Box<dyn std::error::Err
             }
             info!("{}", buf);
         }
-        response.respond(notify_fd)?;
+        if is_dry_run {
+            ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
+                .respond(notify_fd)?;
+        } else {
+            response.respond(notify_fd)?;
+        }
     }
 }
 
