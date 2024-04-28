@@ -13,6 +13,34 @@ impl DnsName {
         self.0.as_str()
     }
 
+    pub fn parse_no_punycode(other: &str) -> Result<Self, DnsNameError> {
+        Self::parse(other, ParseOptions { punycode: false })
+    }
+
+    fn parse(other: &str, options: ParseOptions) -> Result<Self, DnsNameError> {
+        if options.punycode && !other.is_ascii() {
+            let mut new_other = String::with_capacity(2 * other.len() + 4);
+            new_other.push_str("xn--");
+            for label in other.trim().split('.') {
+                if label.is_ascii() {
+                    new_other.push_str(label);
+                } else {
+                    new_other.push_str(&punycode::encode(label).map_err(|_| DnsNameError)?);
+                }
+                new_other.push('.');
+            }
+            if new_other.as_bytes().last() == Some(&b'.') {
+                new_other.pop();
+            }
+            validate_dns_name(new_other.as_str())?;
+            Ok(Self(new_other))
+        } else {
+            let other = other.trim();
+            validate_dns_name(other)?;
+            Ok(Self(other.to_string()))
+        }
+    }
+
     fn slice_without_dot(&self) -> &[u8] {
         let slice = self.0.as_bytes();
         let n = if slice.last() == Some(&b'.') {
@@ -47,33 +75,14 @@ impl FromStr for DnsName {
     type Err = DnsNameError;
 
     fn from_str(other: &str) -> Result<Self, Self::Err> {
-        TryFrom::try_from(other.to_string())
+        Self::parse(other, ParseOptions { punycode: true })
     }
 }
 
 impl TryFrom<String> for DnsName {
     type Error = DnsNameError;
     fn try_from(other: String) -> Result<Self, Self::Error> {
-        let other = if !other.is_ascii() {
-            let mut new_other = String::with_capacity(2 * other.len() + 4);
-            new_other.push_str("xn--");
-            for label in other.trim().split('.') {
-                if label.is_ascii() {
-                    new_other.push_str(label);
-                } else {
-                    new_other.push_str(&punycode::encode(label).map_err(|_| DnsNameError)?);
-                }
-                new_other.push('.');
-            }
-            if new_other.as_bytes().last() == Some(&b'.') {
-                new_other.pop();
-            }
-            new_other
-        } else {
-            other.trim().to_string()
-        };
-        validate_dns_name(other.as_str())?;
-        Ok(Self(other))
+        Self::parse(other.as_str(), ParseOptions { punycode: true })
     }
 }
 
@@ -93,6 +102,10 @@ impl Display for DnsName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
+}
+
+struct ParseOptions {
+    punycode: bool,
 }
 
 fn validate_dns_name(other: &str) -> Result<(), DnsNameError> {
