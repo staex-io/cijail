@@ -45,8 +45,6 @@ pub(crate) fn main(
     is_dry_run: bool,
     allow_loopback: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    info!("tracer resuid {:?}", nix::unistd::getresuid()?);
-    info!("tracer resgid {:?}", nix::unistd::getresgid()?);
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::from_base64(string.as_str())?,
         Err(_) => Default::default(),
@@ -356,7 +354,15 @@ impl Context<'_> {
         ) {
             Ok(_) => {}
             Err(nix::errno::Errno::EPERM) => {
-                let file = self.mutable.get_memory_file(pid)?;
+                let file = self.mutable.get_memory_file(pid)
+                    .map_err(|e| if e.kind() == ErrorKind::PermissionDenied {
+                        std::io::Error::new(
+                            e.kind(),
+                            format!("failed to read tracee process memory ({}), try to enable CAP_SYS_PTRACE capability", e)
+                        )
+                    } else {
+                        e
+                    })?;
                 file.read_at(&mut buf[..len], base as u64)?;
             }
             Err(e) => {
