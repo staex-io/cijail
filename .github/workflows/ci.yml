@@ -5,11 +5,10 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail-ci:latest@sha256:a34338b49056f528fbf439f0dc6c196c01b38174aa7ad9345b1bb8c00c8dea52
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:f7c0ff871f358af87856992c3195ec7e57cf67be35265aa9689663b96c6443b9
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
-      options: --cap-add SYS_PTRACE
     env:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
