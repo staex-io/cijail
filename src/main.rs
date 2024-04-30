@@ -77,6 +77,16 @@ fn drop_capabilities() -> Result<(), CapsError> {
             caps::drop(None, set, CAP)?;
         }
     }
+    for set in [
+        CapSet::Permitted,
+        CapSet::Effective,
+        CapSet::Inheritable,
+        CapSet::Ambient,
+        CapSet::Bounding,
+    ] {
+        let capabilities = caps::read(None, set)?;
+        eprintln!("{:?}: {:?}", set, capabilities);
+    }
     Ok(())
 }
 
