@@ -408,7 +408,9 @@ impl MutableContext {
             Entry::Occupied(entry) => Ok(entry.into_mut()),
             Entry::Vacant(entry) => {
                 let path = format!("/proc/{}/mem", pid);
-                let file = File::open(path)?;
+                let file = File::open(path.as_str()).map_err(|e| {
+                    std::io::Error::new(e.kind(), format!("failed to open `{}`: {}", path, e))
+                })?;
                 Ok(entry.insert(file))
             }
         }
