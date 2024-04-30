@@ -1,12 +1,16 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::fmt::Write;
+use std::fs::File;
 use std::io::ErrorKind;
 use std::io::IoSliceMut;
 use std::mem::size_of;
 use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::FileExt;
 use std::os::unix::process::parent_id;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -45,51 +49,36 @@ pub(crate) fn main(
         Ok(string) => EndpointSet::from_base64(string.as_str())?,
         Err(_) => Default::default(),
     };
-    let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
-    prohibited_files.insert(ProhibitedFile::new(
-        format!("/proc/{}/mem", std::process::id()).as_str(),
-    )?);
-    prohibited_files.insert(ProhibitedFile::new(
-        format!("/proc/{}/mem", parent_id()).as_str(),
-    )?);
-    if let Ok(file) = ProhibitedFile::new("/dev/mem") {
-        prohibited_files.insert(file);
-    }
-    let mut dns_names: Vec<DnsName> = Vec::new();
-    let mut denied_paths: Vec<PathBuf> = Vec::new();
-    let mut sockaddrs: Vec<SocketAddr> = Vec::new();
+    let immutable_context = ImmutableContext::new()?;
+    let mut mutable_context = MutableContext::new();
     loop {
-        dns_names.clear();
-        denied_paths.clear();
-        sockaddrs.clear();
+        mutable_context.clear();
         let request = ScmpNotifReq::receive(notify_fd)?;
-        let context = Context { notify_fd, request };
+        let mut context = Context {
+            notify_fd,
+            request,
+            mutable: &mut mutable_context,
+            immutable: &immutable_context,
+        };
         context.validate()?;
-        let syscall = context.handle_syscall(
-            &mut dns_names,
-            &mut sockaddrs,
-            &mut denied_paths,
-            &prohibited_files,
-        )?;
+        let syscall = context.handle_syscall()?;
         if allow_loopback {
-            sockaddrs.retain(|sockaddr| !sockaddr.ip().is_loopback());
+            context
+                .mutable
+                .sockaddrs
+                .retain(|sockaddr| !sockaddr.ip().is_loopback());
         }
-        let response = if (sockaddrs.is_empty()
-            || allowed_endpoints.contains_any_socket_address(sockaddrs.as_slice()))
-            && (dns_names.is_empty()
-                || allowed_endpoints.contains_any_dns_name(dns_names.as_slice()))
-            && denied_paths.is_empty()
-        {
-            ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
+        let response = if context.mutable.is_continue(&allowed_endpoints) {
+            ScmpNotifResp::new_continue(context.request.id, ScmpNotifRespFlags::empty())
         } else {
-            let error = if !denied_paths.is_empty() {
+            let error = if !context.mutable.denied_paths.is_empty() {
                 libc::ENOMEDIUM
             } else {
                 libc::ENETUNREACH
             };
-            ScmpNotifResp::new_error(request.id, -error, ScmpNotifRespFlags::empty())
+            ScmpNotifResp::new_error(context.request.id, -error, ScmpNotifRespFlags::empty())
         };
-        if !sockaddrs.is_empty() || !dns_names.is_empty() || !denied_paths.is_empty() {
+        if !mutable_context.is_empty() {
             let mut buf = String::with_capacity(4096);
             if is_dry_run {
                 write!(&mut buf, "DRYRUN ")?;
@@ -100,16 +89,16 @@ pub(crate) fn main(
                 if response.error == 0 { "allow" } else { "deny" }
             )?;
             write!(&mut buf, " {}", syscall)?;
-            for addr in sockaddrs.iter() {
+            for addr in mutable_context.sockaddrs.iter() {
                 match allowed_endpoints.resolve_socketaddr(addr) {
                     Some(dns_name) => write!(&mut buf, " {}:{}", dns_name, addr.port())?,
                     None => write!(&mut buf, " {}", addr)?,
                 }
             }
-            for name in dns_names.iter() {
+            for name in mutable_context.dns_names.iter() {
                 write!(&mut buf, " {}", name)?;
             }
-            for path in denied_paths.iter() {
+            for path in mutable_context.denied_paths.iter() {
                 write!(&mut buf, " {}", path.display())?;
             }
             info!("{}", buf);
@@ -142,24 +131,20 @@ impl ProhibitedFile {
     }
 }
 
-struct Context {
+struct Context<'a> {
     notify_fd: RawFd,
     request: ScmpNotifReq,
+    mutable: &'a mut MutableContext,
+    immutable: &'a ImmutableContext,
 }
 
-impl Context {
+impl Context<'_> {
     fn validate(&self) -> Result<(), std::io::Error> {
         notify_id_valid(self.notify_fd, self.request.id)
             .map_err(|e| std::io::Error::new(ErrorKind::Other, e.to_string()))
     }
 
-    fn handle_syscall(
-        &self,
-        dns_names: &mut Vec<DnsName>,
-        sockaddrs: &mut Vec<SocketAddr>,
-        denied_paths: &mut Vec<PathBuf>,
-        prohibited_files: &HashSet<ProhibitedFile>,
-    ) -> Result<String, std::io::Error> {
+    fn handle_syscall(&mut self) -> Result<String, std::io::Error> {
         let syscall = self
             .request
             .data
@@ -171,63 +156,57 @@ impl Context {
                 self.read_socket_addr(
                     self.request.data.args[1] as usize,
                     self.request.data.args[2] as u32,
-                    sockaddrs,
                 )?;
             }
             "sendto" => {
                 self.read_socket_addr(
                     self.request.data.args[4] as usize,
                     self.request.data.args[5] as u32,
-                    sockaddrs,
                 )?;
                 self.read_dns_packet(
                     self.request.data.args[1] as usize,
                     self.request.data.args[2] as usize,
-                    dns_names,
                 )?;
             }
             "sendmsg" => {
-                self.read_msghdr(self.request.data.args[1] as usize, dns_names, sockaddrs)?;
+                self.read_msghdr(self.request.data.args[1] as usize)?;
             }
             "sendmmsg" => self.read_mmsghdr(
                 self.request.data.args[1] as usize,
                 self.request.data.args[2] as usize,
-                dns_names,
-                sockaddrs,
             )?,
             "write" | "send" => {
                 let fd = self.request.data.args[0] as RawFd;
                 let filename = format!("/proc/{}/fd/{}", self.request.pid, fd);
-                self.check_path(filename.as_bytes(), prohibited_files, denied_paths)?;
+                self.check_path(filename.as_bytes())?;
                 if self.is_socket(fd)? {
                     self.read_dns_packet(
                         self.request.data.args[1] as usize,
                         self.request.data.args[2] as usize,
-                        dns_names,
                     )?;
                 }
             }
             "open" => {
                 let path = self.read_path(self.request.data.args[0] as usize)?;
-                self.check_path(path.as_slice(), prohibited_files, denied_paths)?;
+                self.check_path(path.as_slice())?;
             }
             "openat" => {
                 let path = self.read_path(self.request.data.args[1] as usize)?;
                 let dirfd = self.request.data.args[0] as i32;
                 if path.first() == Some(&b'/') {
-                    self.check_path(path.as_slice(), prohibited_files, denied_paths)?;
+                    self.check_path(path.as_slice())?;
                 } else if dirfd == AT_FDCWD {
                     let mut new_path =
                         readlink(format!("/proc/{}/cwd", self.request.pid).as_str())?
                             .into_encoded_bytes();
                     new_path.push(b'/');
                     new_path.extend(path);
-                    self.check_path(new_path.as_slice(), prohibited_files, denied_paths)?;
+                    self.check_path(new_path.as_slice())?;
                 } else {
                     let mut new_path = format!("/proc/{}/{}", self.request.pid, dirfd).into_bytes();
                     new_path.push(b'/');
                     new_path.extend(path);
-                    self.check_path(new_path.as_slice(), prohibited_files, denied_paths)?;
+                    self.check_path(new_path.as_slice())?;
                 }
             }
             _ => {}
@@ -235,14 +214,14 @@ impl Context {
         Ok(syscall)
     }
 
-    fn read_bytes(&self, base: usize, len: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn read_bytes(&mut self, base: usize, len: usize) -> Result<Vec<u8>, std::io::Error> {
         let mut buf = vec![0_u8; len];
         self.read_memory(base, len, &mut buf)?;
         Ok(buf)
     }
 
     fn read_array<'a, T>(
-        &self,
+        &mut self,
         base: usize,
         len: usize,
     ) -> Result<(&'a [T], Vec<u8>), std::io::Error> {
@@ -257,19 +236,14 @@ impl Context {
         Ok((messages, buf))
     }
 
-    fn read_dns_packet(
-        &self,
-        base: usize,
-        len: usize,
-        dns_names: &mut Vec<DnsName>,
-    ) -> Result<(), std::io::Error> {
+    fn read_dns_packet(&mut self, base: usize, len: usize) -> Result<(), std::io::Error> {
         let bytes = self.read_bytes(base, len)?;
         let bytes = &bytes[..bytes.len().min(MAX_DNS_PACKET_SIZE)];
         if let Ok((packet, _)) = DnsPacket::read_questions_only(bytes) {
             for question in packet.questions {
                 if let Ok(name) = from_utf8(question.name.as_slice()) {
                     if let Ok(dns_name) = DnsName::parse_no_punycode(name) {
-                        dns_names.push(dns_name);
+                        self.mutable.dns_names.push(dns_name);
                     }
                 }
             }
@@ -277,12 +251,7 @@ impl Context {
         Ok(())
     }
 
-    fn read_socket_addr(
-        &self,
-        base: usize,
-        len: u32,
-        sockaddrs: &mut Vec<SocketAddr>,
-    ) -> Result<(), std::io::Error> {
+    fn read_socket_addr(&mut self, base: usize, len: u32) -> Result<(), std::io::Error> {
         if base == 0 {
             return Ok(());
         }
@@ -293,16 +262,11 @@ impl Context {
             OsSocketAddr::copy_from_raw(buf.as_mut_slice().as_ptr() as *const sockaddr, len)
         }
         .into_addr();
-        sockaddrs.extend(sockaddr);
+        self.mutable.sockaddrs.extend(sockaddr);
         Ok(())
     }
 
-    fn read_msghdr(
-        &self,
-        base: usize,
-        dns_names: &mut Vec<DnsName>,
-        sockaddrs: &mut Vec<SocketAddr>,
-    ) -> Result<(), std::io::Error> {
+    fn read_msghdr(&mut self, base: usize) -> Result<(), std::io::Error> {
         if base == 0 {
             return Ok(());
         }
@@ -311,41 +275,35 @@ impl Context {
         self.read_memory(base, len, &mut buf)?;
         let message = buf.as_mut_slice().as_ptr() as *const socket::msghdr;
         let message = unsafe { from_raw_parts::<socket::msghdr>(message, 1) }[0];
-        self.read_socket_addr(message.msg_name as usize, message.msg_namelen, sockaddrs)?;
+        self.read_socket_addr(message.msg_name as usize, message.msg_namelen)?;
         if let Ok((iovecs, _storage)) =
             self.read_array::<socket::iovec>(message.msg_iov as usize, message.msg_iovlen)
         {
             for iovec in iovecs {
-                self.read_dns_packet(iovec.iov_base as usize, iovec.iov_len, dns_names)?;
+                self.read_dns_packet(iovec.iov_base as usize, iovec.iov_len)?;
             }
         }
         Ok(())
     }
 
-    fn read_mmsghdr(
-        &self,
-        base: usize,
-        len: usize,
-        dns_names: &mut Vec<DnsName>,
-        sockaddrs: &mut Vec<SocketAddr>,
-    ) -> Result<(), std::io::Error> {
+    fn read_mmsghdr(&mut self, base: usize, len: usize) -> Result<(), std::io::Error> {
         let (messages, _storage) = self.read_array::<socket::mmsghdr>(base, len)?;
         for message in messages {
             let base = message.msg_hdr.msg_name as usize;
-            self.read_socket_addr(base, message.msg_hdr.msg_namelen, sockaddrs)?;
+            self.read_socket_addr(base, message.msg_hdr.msg_namelen)?;
             if let Ok((iovecs, _storage)) = self.read_array::<socket::iovec>(
                 message.msg_hdr.msg_iov as usize,
                 message.msg_hdr.msg_iovlen,
             ) {
                 for iovec in iovecs {
-                    self.read_dns_packet(iovec.iov_base as usize, iovec.iov_len, dns_names)?;
+                    self.read_dns_packet(iovec.iov_base as usize, iovec.iov_len)?;
                 }
             }
         }
         Ok(())
     }
 
-    fn read_path(&self, base: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn read_path(&mut self, base: usize) -> Result<Vec<u8>, std::io::Error> {
         let mut path = self.read_bytes(base, libc::PATH_MAX as usize)?;
         path.truncate(
             path.iter()
@@ -355,12 +313,7 @@ impl Context {
         Ok(path)
     }
 
-    fn check_path(
-        &self,
-        path: &[u8],
-        prohibited_files: &HashSet<ProhibitedFile>,
-        denied_paths: &mut Vec<PathBuf>,
-    ) -> Result<(), std::io::Error> {
+    fn check_path(&mut self, path: &[u8]) -> Result<(), std::io::Error> {
         let file_status = stat(path);
         self.validate()?;
         match file_status {
@@ -368,8 +321,10 @@ impl Context {
             Err(e) => Err(e.into()),
             Ok(stat) => {
                 let file = ProhibitedFile::from_stat(stat);
-                if prohibited_files.contains(&file) {
-                    denied_paths.push(OsStr::from_bytes(path).into());
+                if self.immutable.prohibited_files.contains(&file) {
+                    self.mutable
+                        .denied_paths
+                        .push(OsStr::from_bytes(path).into());
                 }
                 Ok(())
             }
@@ -385,13 +340,98 @@ impl Context {
         }
     }
 
-    fn read_memory(&self, base: usize, len: usize, buf: &mut [u8]) -> Result<(), std::io::Error> {
-        process_vm_readv(
-            Pid::from_raw(self.request.pid as i32),
+    fn read_memory(
+        &mut self,
+        base: usize,
+        len: usize,
+        buf: &mut [u8],
+    ) -> Result<(), std::io::Error> {
+        let pid = Pid::from_raw(self.request.pid as i32);
+        match process_vm_readv(
+            pid,
             &mut [IoSliceMut::new(buf)],
             &[RemoteIoVec { base, len }],
-        )?;
+        ) {
+            Ok(_) => {}
+            Err(nix::errno::Errno::EPERM) => {
+                let file = self.mutable.get_memory_file(pid)?;
+                file.read_at(&mut buf[..len], base as u64)?;
+            }
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    ErrorKind::Other,
+                    format!("failed to read tracee process memory: {}", e),
+                ));
+            }
+        }
         self.validate()
+    }
+}
+
+struct MutableContext {
+    dns_names: Vec<DnsName>,
+    denied_paths: Vec<PathBuf>,
+    sockaddrs: Vec<SocketAddr>,
+    memory_files: HashMap<Pid, File>,
+}
+
+impl MutableContext {
+    fn new() -> Self {
+        Self {
+            dns_names: Default::default(),
+            denied_paths: Default::default(),
+            sockaddrs: Default::default(),
+            memory_files: Default::default(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.dns_names.clear();
+        self.denied_paths.clear();
+        self.sockaddrs.clear();
+    }
+
+    fn is_continue(&mut self, allowed_endpoints: &EndpointSet) -> bool {
+        (self.sockaddrs.is_empty()
+            || allowed_endpoints.contains_any_socket_address(self.sockaddrs.as_slice()))
+            && (self.dns_names.is_empty()
+                || allowed_endpoints.contains_any_dns_name(self.dns_names.as_slice()))
+            && self.denied_paths.is_empty()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.sockaddrs.is_empty() && self.dns_names.is_empty() && self.denied_paths.is_empty()
+    }
+
+    fn get_memory_file(&mut self, pid: Pid) -> Result<&mut File, std::io::Error> {
+        match self.memory_files.entry(pid) {
+            Entry::Occupied(entry) => Ok(entry.into_mut()),
+            Entry::Vacant(entry) => {
+                let path = format!("/proc/{}/mem", pid);
+                let file = File::open(path)?;
+                Ok(entry.insert(file))
+            }
+        }
+    }
+}
+
+struct ImmutableContext {
+    prohibited_files: HashSet<ProhibitedFile>,
+}
+
+impl ImmutableContext {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
+        prohibited_files.insert(ProhibitedFile::new(
+            format!("/proc/{}/mem", std::process::id()).as_str(),
+        )?);
+        prohibited_files.insert(ProhibitedFile::new(
+            format!("/proc/{}/mem", parent_id()).as_str(),
+        )?);
+        if let Ok(file) = ProhibitedFile::new("/dev/mem") {
+            prohibited_files.insert(file);
+        }
+        Ok(Self { prohibited_files })
     }
 }
 
