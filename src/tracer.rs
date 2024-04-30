@@ -45,6 +45,8 @@ pub(crate) fn main(
     is_dry_run: bool,
     allow_loopback: bool,
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    info!("tracer resuid {:?}", nix::unistd::getresuid()?);
+    info!("tracer resgid {:?}", nix::unistd::getresgid()?);
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::from_base64(string.as_str())?,
         Err(_) => Default::default(),

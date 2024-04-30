@@ -103,6 +103,8 @@ fn spawn_tracee_process(
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
+            info!("tracee resuid {:?}", nix::unistd::getresuid()?);
+            info!("tracee resgid {:?}", nix::unistd::getresgid()?);
             drop_capabilities().map_err(|_| {
                 std::io::Error::new(ErrorKind::Other, "failed to drop capabilities")
             })?;
