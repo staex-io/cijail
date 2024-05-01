@@ -59,20 +59,17 @@ fn install_seccomp_notify_filter() -> Result<ScmpFd, Error> {
 }
 
 fn drop_capabilities() -> Result<(), CapsError> {
+    const CAP: Capability = Capability::CAP_SYS_PTRACE;
     if caps::has_cap(None, CapSet::Effective, Capability::CAP_SETPCAP)?
-        && caps::has_cap(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?
+        && caps::has_cap(None, CapSet::Bounding, CAP)?
     {
-        info!(
-            "dropping CAP_SYS_PTRACE from the {:?} set",
-            CapSet::Bounding
-        );
-        caps::drop(None, CapSet::Bounding, Capability::CAP_SYS_PTRACE)?;
+        info!("dropping `{}` from the `{:?}` set", CAP, CapSet::Bounding);
+        caps::drop(None, CapSet::Bounding, CAP)?;
     }
-    for set in [CapSet::Effective, CapSet::Inheritable, CapSet::Ambient] {
-        if caps::has_cap(None, set, Capability::CAP_SYS_PTRACE)? {
-            info!("dropping CAP_SYS_PTRACE from the {:?} set", set);
-            caps::drop(None, set, Capability::CAP_SYS_PTRACE)?;
-        }
+    let set = CapSet::Ambient;
+    if caps::has_cap(None, set, CAP)? {
+        info!("dropping `{}` from the `{:?}` set", CAP, set);
+        caps::drop(None, set, CAP)?;
     }
     Ok(())
 }

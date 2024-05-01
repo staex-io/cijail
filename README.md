@@ -10,7 +10,10 @@ Cijail makes it impossible to exfiltrate the data over DNS and makes it difficul
 (The future versions will include HTTPS URL filter as well that would give even more granular control.)
 
 Cijail is implemented using [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) and
-needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) capability to read memory of the processes being traced.
+sometimes needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) capability to read memory of the processes being traced.
+Our local Docker installation does not require this privilege,
+whereas Github Actions runners require.
+The capability is dropped before the command is executed.
 
 
 # Usage
@@ -93,7 +96,7 @@ variables:
 ✅ Gitlab CI/CD pipelines respect Docker's `ENTRYPOINT`,
 and you do not have to prepend `cijail` to every command.
 
-Then you need to add `CAP_SYS_PTRACE` capability to your Gitlab runner configuration.
+Then you *might* need to add `CAP_SYS_PTRACE` capability to your Gitlab runner configuration.
 Currently this is supported only for the runners that you host yourself.
 To do that add the following lines to `/etc/gitlab-runner/config.toml`.
 
