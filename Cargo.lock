@@ -170,6 +170,7 @@ dependencies = [
  "quickcheck",
  "quickcheck_macros",
  "rand",
+ "regex",
  "socketpair",
  "test_bin",
  "thiserror",
