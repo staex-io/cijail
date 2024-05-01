@@ -13,8 +13,7 @@ clap = { version = "4.5.4", features = ["std", "derive", "help", "usage"], defau
 libc = { version = "0.2.153", features = ["std"], default-features = false }
 libseccomp = { version = "0.3.0", features = [], default-features = false }
 log = { version = "0.4.21", features = [], default-features = false }
-# TODO user
-nix = { version = "0.28.0", features = ["uio", "process", "fs", "user"], default-features = false }
+nix = { version = "0.28.0", features = ["uio", "process", "fs"], default-features = false }
 os_socketaddr = { version = "0.2.5", features = [], default-features = false }
 passfd = { version = "0.1.6", features = [], default-features = false }
 punycode = { version = "0.4.1", features = [], default-features = false }
