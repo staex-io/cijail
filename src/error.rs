@@ -20,6 +20,8 @@ pub enum Error {
     BincodeDecode(bincode::error::DecodeError),
     #[error("base64 error: {0}")]
     Base64Decode(base64::DecodeError),
+    #[error("regex error: {0}")]
+    Regex(#[from] regex::Error),
 }
 
 impl Error {

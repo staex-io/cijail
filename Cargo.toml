@@ -1,6 +1,6 @@
 [package]
 name = "cijail"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 publish = false
 
@@ -17,6 +17,7 @@ nix = { version = "0.28.0", features = ["uio", "process", "fs"], default-feature
 os_socketaddr = { version = "0.2.5", features = [], default-features = false }
 passfd = { version = "0.1.6", features = [], default-features = false }
 punycode = { version = "0.4.1", features = [], default-features = false }
+regex = { version = "1.10.4", features = [], default-features = true }
 socketpair = { version = "0.19.5", features = [], default-features = false }
 thiserror = { version = "1.0.58", features = [], default-features = false }
 
