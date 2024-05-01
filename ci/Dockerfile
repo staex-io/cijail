@@ -38,14 +38,14 @@ RUN curl --location --silent --fail --output /usr/bin/shfmt https://github.com/m
     chmod +x /usr/bin/shfmt
 
 RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.4.1 \
+    cijail_version=0.5.0 \
     && curl \
     --silent \
     --fail \
     --location \
     --output /usr/local/bin/cijail \
     https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-glibc-2.31 \
-    && echo '1865846cce65629ae72a9c65a5989da14e911d730e2f884dd866e138901cd1e6 /usr/local/bin/cijail' | sha256sum --check \
+    && echo '5b1da12d24c8bb3aa35aa5402225a4133a2235dea047c703f118126ffa9badd0 /usr/local/bin/cijail' | sha256sum --check \
     && chmod +x /usr/local/bin/cijail
 
 LABEL org.opencontainers.image.source=https://github.com/staex-io/cijail

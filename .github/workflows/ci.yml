@@ -5,7 +5,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail-ci:latest@sha256:592e78d4432c1db857cd0e64d6a4c89b5d056358291a5e81b73fd8ee907a14de
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:bd09ad559901af351884711b87263d795c0a612e9577be8644023af81e720bfe
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
