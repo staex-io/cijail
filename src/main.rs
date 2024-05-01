@@ -66,16 +66,10 @@ fn drop_capabilities() -> Result<(), CapsError> {
         info!("dropping `{}` from the `{:?}` set", CAP, CapSet::Bounding);
         caps::drop(None, CapSet::Bounding, CAP)?;
     }
-    for set in [
-        CapSet::Permitted,
-        CapSet::Effective,
-        CapSet::Inheritable,
-        CapSet::Ambient,
-    ] {
-        if caps::has_cap(None, set, CAP)? {
-            info!("dropping `{}` from the `{:?}` set", CAP, set);
-            caps::drop(None, set, CAP)?;
-        }
+    let set = CapSet::Ambient;
+    if caps::has_cap(None, set, CAP)? {
+        info!("dropping `{}` from the `{:?}` set", CAP, set);
+        caps::drop(None, set, CAP)?;
     }
     for set in [
         CapSet::Permitted,
@@ -103,8 +97,6 @@ fn spawn_tracee_process(
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
-            info!("tracee resuid {:?}", nix::unistd::getresuid()?);
-            info!("tracee resgid {:?}", nix::unistd::getresgid()?);
             drop_capabilities().map_err(|_| {
                 std::io::Error::new(ErrorKind::Other, "failed to drop capabilities")
             })?;
