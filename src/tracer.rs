@@ -19,7 +19,9 @@ use std::str::from_utf8;
 
 use cijail::DnsName;
 use cijail::DnsPacket;
+use cijail::EndpointSet;
 use cijail::Error;
+use cijail::CIJAIL_ENDPOINTS;
 use libc::sockaddr;
 use libc::AT_FDCWD;
 use libseccomp::notify_id_valid;
@@ -37,8 +39,6 @@ use nix::unistd::Pid;
 use os_socketaddr::OsSocketAddr;
 
 use crate::socket;
-use cijail::EndpointSet;
-use cijail::CIJAIL_ENDPOINTS;
 
 pub(crate) fn main(
     notify_fd: RawFd,
@@ -90,9 +90,11 @@ pub(crate) fn main(
             )?;
             write!(&mut buf, " {}", syscall)?;
             for addr in mutable_context.sockaddrs.iter() {
-                match allowed_endpoints.resolve_socketaddr(addr) {
-                    Some(dns_name) => write!(&mut buf, " {}:{}", dns_name, addr.port())?,
-                    None => write!(&mut buf, " {}", addr)?,
+                let dns_names = allowed_endpoints.resolve_socketaddr(addr);
+                if !dns_names.is_empty() {
+                    write!(&mut buf, " {}:{}", dns_names[0], addr.port())?;
+                } else {
+                    write!(&mut buf, " {}", addr)?;
                 }
             }
             for name in mutable_context.dns_names.iter() {

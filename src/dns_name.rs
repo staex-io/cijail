@@ -16,6 +16,10 @@ impl DnsName {
         self.0.as_str()
     }
 
+    pub fn parse_with_punycode(other: &str) -> Result<Self, DnsNameError> {
+        Self::parse(other, ParseOptions { punycode: true })
+    }
+
     pub fn parse_no_punycode(other: &str) -> Result<Self, DnsNameError> {
         Self::parse(other, ParseOptions { punycode: false })
     }

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Write;
@@ -19,19 +18,19 @@ use bincode::error::EncodeError;
 use bincode::BorrowDecode;
 use bincode::Decode;
 use bincode::Encode;
-use hyper::Uri;
 use regex::Regex;
 
 use crate::DnsName;
 use crate::Error;
+use crate::Uri;
 
 #[derive(Default)]
 #[cfg_attr(test, derive(Clone, Debug))]
 pub struct EndpointSet {
-    socketaddrs: HashMap<SocketAddr, Option<DnsName>>,
-    dns_names: HashSet<DnsName>,
+    socketaddrs: HashMap<SocketAddr, Vec<DnsName>>,
+    dns_names: HashMap<DnsName, Vec<SocketAddr>>,
     dns_name_patterns: Vec<Regex>,
-    uris: Vec<Uri>,
+    pub uris: Vec<Uri>,
 }
 
 impl EndpointSet {
@@ -46,7 +45,7 @@ impl EndpointSet {
 
     pub fn contains_any_dns_name(&self, names: &[DnsName]) -> bool {
         for name in names.iter() {
-            if self.dns_names.contains(name) {
+            if self.dns_names.contains_key(name) {
                 return true;
             }
             for pattern in self.dns_name_patterns.iter() {
@@ -67,10 +66,17 @@ impl EndpointSet {
         false
     }
 
-    pub fn resolve_socketaddr(&self, socketaddr: &SocketAddr) -> Option<&DnsName> {
+    pub fn resolve_socketaddr(&self, socketaddr: &SocketAddr) -> &[DnsName] {
         match self.socketaddrs.get(socketaddr) {
-            Some(option) => option.as_ref(),
-            None => None,
+            Some(names) => names.as_slice(),
+            None => &[],
+        }
+    }
+
+    pub fn resolve_dns_name(&self, dns_name: &DnsName) -> &[SocketAddr] {
+        match self.dns_names.get(dns_name) {
+            Some(addrs) => addrs.as_slice(),
+            None => &[],
         }
     }
 
@@ -90,12 +96,12 @@ impl EndpointSet {
     }
 
     pub fn allow_socketaddr(&mut self, socketaddr: SocketAddr) {
-        self.socketaddrs.insert(socketaddr, None);
+        self.socketaddrs.insert(socketaddr, Vec::new());
     }
 
     fn parse(other: &str) -> Result<Self, Error> {
-        let mut socketaddrs: HashMap<SocketAddr, Option<DnsName>> = HashMap::new();
-        let mut dns_names: HashSet<DnsName> = HashSet::new();
+        let mut socketaddrs: HashMap<SocketAddr, Vec<DnsName>> = HashMap::new();
+        let mut dns_names: HashMap<DnsName, Vec<SocketAddr>> = HashMap::new();
         let mut dns_name_patterns: Vec<Regex> = Vec::new();
         let mut uris: Vec<Uri> = Vec::new();
         for word in other.split_whitespace() {
@@ -104,9 +110,10 @@ impl EndpointSet {
             })?;
             match endpoint {
                 Endpoint::SocketAddr(socketaddr) => {
-                    socketaddrs.insert(socketaddr, None);
+                    socketaddrs.entry(socketaddr).or_default();
                 }
                 Endpoint::DnsNameAndPort { name, port } => {
+                    let mut name_socketaddrs: Vec<SocketAddr> = Vec::new();
                     if let Some(port) = port {
                         let addrs = (name.to_string(), port).to_socket_addrs().map_err(|e| {
                             Error::map(format!(
@@ -115,15 +122,31 @@ impl EndpointSet {
                             ))
                         })?;
                         for addr in addrs.into_iter() {
-                            socketaddrs.insert(addr, Some(name.clone()));
+                            socketaddrs.entry(addr).or_default().push(name.clone());
+                            name_socketaddrs.push(addr);
                         }
                     }
-                    dns_names.insert(name);
+                    dns_names
+                        .entry(name)
+                        .or_default()
+                        .extend(name_socketaddrs.into_iter());
                 }
                 Endpoint::DnsNamePattern(regex) => {
                     dns_name_patterns.push(regex);
                 }
                 Endpoint::Uri(uri) => {
+                    let addrs = (uri.host.as_str(), uri.port)
+                        .to_socket_addrs()
+                        .map_err(|e| {
+                            Error::map(format!(
+                                "failed to parse `{}:{}` as socket address: {}",
+                                uri.host, uri.port, e
+                            ))
+                        })?;
+                    dns_names
+                        .entry(uri.host.clone())
+                        .or_default()
+                        .extend(addrs.into_iter());
                     uris.push(uri);
                 }
             }
@@ -221,7 +244,7 @@ impl Display for EndpointSet {
         if !self.socketaddrs.is_empty() {
             write!(f, " ")?;
         }
-        print_space_separated(f, self.dns_names.iter())?;
+        print_space_separated(f, self.dns_names.keys())?;
         Ok(())
     }
 }
@@ -240,11 +263,8 @@ impl FromStr for Endpoint {
             Ok(socketaddr) => Ok(Self::SocketAddr(socketaddr)),
             Err(_) => {
                 if let Ok(uri) = other.parse::<Uri>() {
-                    if uri.scheme_str().is_some() && uri.host().is_some() {
-                        return Ok(Self::Uri(uri));
-                    }
-                }
-                if other.contains('*') {
+                    Ok(Self::Uri(uri))
+                } else if other.contains('*') {
                     Ok(Self::DnsNamePattern(glob_to_regex(other)?))
                 } else {
                     match other.rfind(':') {
@@ -319,14 +339,14 @@ mod tests {
     }
 
     impl Arbitrary for EndpointSet {
-        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
-            let dns_name_patterns: Vec<ArbitraryRegex> = Arbitrary::arbitrary(g);
-            let uris: Vec<ArbitraryUri> = Arbitrary::arbitrary(g);
+        fn arbitrary(_: &mut quickcheck::Gen) -> Self {
+            let mut g3 = quickcheck::Gen::new(3);
+            let dns_name_patterns: Vec<ArbitraryRegex> = Arbitrary::arbitrary(&mut g3);
             Self {
-                socketaddrs: Arbitrary::arbitrary(g),
-                dns_names: Arbitrary::arbitrary(g),
+                socketaddrs: Arbitrary::arbitrary(&mut g3),
+                dns_names: Arbitrary::arbitrary(&mut g3),
                 dns_name_patterns: dns_name_patterns.into_iter().map(|x| x.0).collect(),
-                uris: uris.into_iter().map(|x| x.0).collect(),
+                uris: Arbitrary::arbitrary(&mut g3),
             }
         }
     }
@@ -347,19 +367,6 @@ mod tests {
             let i = prng.gen_range(0..labels.len());
             labels[i] = "*".to_string();
             Self(Regex::new(glob_to_regex(labels.join(".").as_str()).unwrap().as_str()).unwrap())
-        }
-    }
-
-    #[derive(Clone)]
-    struct ArbitraryUri(Uri);
-
-    impl Arbitrary for ArbitraryUri {
-        fn arbitrary(_: &mut quickcheck::Gen) -> Self {
-            let uri: Uri =
-                "abc://username:password@example.com:123/path/data?key=value&key2=value2#fragid1"
-                    .parse()
-                    .unwrap();
-            Self(uri)
         }
     }
 

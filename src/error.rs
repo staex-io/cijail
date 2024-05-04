@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::io::ErrorKind;
 
+use http::uri::InvalidUriParts;
 use libseccomp::error::SeccompError;
 use thiserror::Error;
 
@@ -26,6 +27,12 @@ pub enum Error {
     Hyper(#[from] hyper::Error),
     #[error("fmt error: {0}")]
     Fmt(#[from] std::fmt::Error),
+    #[error("uri error: {0}")]
+    Uri(#[from] InvalidUriParts),
+    #[error("https client error: {0}")]
+    HyperClient(#[from] hyper_util::client::legacy::Error),
+    #[error("denied")]
+    Deny,
 }
 
 impl Error {
