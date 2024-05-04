@@ -48,6 +48,9 @@ fn dig() {
 }
 
 #[test]
+fn curl() {}
+
+#[test]
 fn read_dev_mem() {
     let sh_args = vec!["/bin/sh", "-c", "exec head -n1 /dev/mem"];
     assert_failure(1, get_test_bin("cijail").args(sh_args.clone()));

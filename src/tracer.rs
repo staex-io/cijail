@@ -37,8 +37,8 @@ use nix::unistd::Pid;
 use os_socketaddr::OsSocketAddr;
 
 use crate::socket;
-use crate::EndpointSet;
-use crate::CIJAIL_ENDPOINTS;
+use cijail::EndpointSet;
+use cijail::CIJAIL_ENDPOINTS;
 
 pub(crate) fn main(
     notify_fd: RawFd,
@@ -184,6 +184,12 @@ impl Context<'_> {
                         self.request.data.args[1] as usize,
                         self.request.data.args[2] as usize,
                     )?;
+                    /*
+                    self.read_tls_packet(
+                        self.request.data.args[1] as usize,
+                        self.request.data.args[2] as usize,
+                    )?;
+                    */
                 }
             }
             "open" => {
@@ -251,9 +257,13 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn read_socket_addr(&mut self, base: usize, len: u32) -> Result<(), std::io::Error> {
+    fn read_socket_addr(
+        &mut self,
+        base: usize,
+        len: u32,
+    ) -> Result<Option<SocketAddr>, std::io::Error> {
         if base == 0 {
-            return Ok(());
+            return Ok(None);
         }
         let mut buf = vec![0_u8; len as usize];
         self.read_memory(base, len as usize, &mut buf)?;
@@ -263,7 +273,7 @@ impl Context<'_> {
         }
         .into_addr();
         self.mutable.sockaddrs.extend(sockaddr);
-        Ok(())
+        Ok(sockaddr)
     }
 
     fn read_msghdr(&mut self, base: usize) -> Result<(), std::io::Error> {

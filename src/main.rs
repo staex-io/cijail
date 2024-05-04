@@ -1,6 +1,8 @@
 use std::ffi::c_int;
 use std::ffi::OsString;
 use std::io::ErrorKind;
+use std::io::Read;
+use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Child;
@@ -10,8 +12,13 @@ use std::process::ExitCode;
 use caps::errors::CapsError;
 use caps::CapSet;
 use caps::Capability;
+use cijail::bool_to_str;
+use cijail::env_to_bool;
 use cijail::EndpointSet;
 use cijail::Error;
+use cijail::Logger;
+use cijail::CIJAIL_DRY_RUN;
+use cijail::CIJAIL_ENDPOINTS;
 use clap::Parser;
 use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
@@ -26,16 +33,9 @@ use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
 
-use crate::Logger;
-
-mod logger;
 mod socket;
 mod tracer;
 
-pub(crate) use self::logger::*;
-
-pub(crate) const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";
-const CIJAIL_DRY_RUN: &str = "CIJAIL_DRY_RUN";
 const CIJAIL_ALLOW_LOOPBACK: &str = "CIJAIL_ALLOW_LOOPBACK";
 const CIJAIL_TRACER: &str = "CIJAIL_TRACER";
 
@@ -77,6 +77,7 @@ fn drop_capabilities() -> Result<(), CapsError> {
 fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
+    proxy_port: u16,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     if args.is_empty() {
         return Err("please specify the command to run".into());
@@ -84,6 +85,7 @@ fn spawn_tracee_process(
     let arg0 = args.remove(0);
     let mut child = Command::new(arg0.clone());
     child.args(args.clone());
+    child.env("http_proxy", format!("http://127.0.0.1:{}", proxy_port));
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -123,7 +125,7 @@ fn spawn_tracee_process(
 
 fn spawn_tracer_process(
     socket: SocketpairStream,
-    allowed_endpoints: EndpointSet,
+    allowed_endpoints: &EndpointSet,
     is_dry_run: bool,
     allow_loopback: bool,
 ) -> Result<Child, Box<dyn std::error::Error>> {
@@ -151,6 +153,37 @@ fn spawn_tracer_process(
     Ok(child)
 }
 
+fn spawn_proxy_process(
+    allowed_endpoints: &EndpointSet,
+    is_dry_run: bool,
+    allow_loopback: bool,
+) -> Result<(Child, u16), Box<dyn std::error::Error>> {
+    let mut sockets = socketpair_stream()?;
+    let arg0 = std::env::args_os()
+        .next()
+        .ok_or_else(|| Error::map("can not find zeroth argument"))?;
+    let mut child = Command::new(format!("{}-proxy", arg0.to_string_lossy()));
+    child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_base64()?);
+    child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
+    child.env(CIJAIL_ALLOW_LOOPBACK, bool_to_str(allow_loopback));
+    unsafe {
+        let socket = sockets.0.as_raw_fd();
+        child.pre_exec(move || {
+            // File descriptors seem to close automatically,
+            // hence we remap socketpair fd to stdin fd.
+            check(libc::dup2(socket, 0))?;
+            Ok(())
+        })
+    };
+    let child = child
+        .spawn()
+        .map_err(move |e| format!("failed to run `{}`: {}", arg0.to_string_lossy(), e))?;
+    let mut proxy_port_bytes = [0_u8; 2];
+    sockets.1.read_exact(&mut proxy_port_bytes)?;
+    let proxy_port = u16::from_ne_bytes(proxy_port_bytes);
+    Ok((child, proxy_port))
+}
+
 #[derive(Parser)]
 #[command(
     about = "CI/CD pipeline process jail that filters outgoing network traffic.",
@@ -175,7 +208,7 @@ struct Args {
 }
 
 fn main() -> Result<ExitCode, Box<dyn std::error::Error>> {
-    Logger::init().map_err(|_| "failed to set logger")?;
+    Logger::init("cijail").map_err(|_| "failed to set logger")?;
     match do_main() {
         Ok(code) => Ok(code),
         Err(e) => {
@@ -198,21 +231,29 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         return Ok(ExitCode::SUCCESS);
     }
     // resolve DNS names *before* the tracee process is spawned
-    let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
+    let mut allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(endpoints) => EndpointSet::parse_with_dns_name_resolution(endpoints.as_str())?,
         Err(_) => Default::default(),
     };
     let (socket0, socket1) = socketpair_stream()?;
-    let mut tracee = spawn_tracee_process(socket0, args.command)?;
+    let (mut proxy, proxy_port) = spawn_proxy_process(
+        &allowed_endpoints,
+        is_dry_run || args.dry_run,
+        allow_loopback || args.allow_loopback,
+    )?;
+    allowed_endpoints.allow_socketaddr(SocketAddr::from(([127, 0, 0, 1], proxy_port)));
+    let mut tracee = spawn_tracee_process(socket0, args.command, proxy_port)?;
     let mut tracer = spawn_tracer_process(
         socket1,
-        allowed_endpoints,
+        &allowed_endpoints,
         is_dry_run || args.dry_run,
         allow_loopback || args.allow_loopback,
     )?;
     let status = tracee.wait()?;
     tracer.kill()?;
     tracer.wait()?;
+    proxy.kill()?;
+    proxy.wait()?;
     Ok(match status.code() {
         Some(code) => (if is_dry_run { 99 } else { code as u8 }).into(),
         None => {
@@ -227,32 +268,5 @@ fn check(ret: c_int) -> Result<c_int, std::io::Error> {
         Err(std::io::Error::last_os_error())
     } else {
         Ok(ret)
-    }
-}
-
-fn env_to_bool(name: &str) -> Result<bool, std::io::Error> {
-    match std::env::var(name) {
-        Ok(value) => str_to_bool(value.as_str()),
-        Err(_) => Ok(false),
-    }
-}
-
-fn str_to_bool(s: &str) -> Result<bool, std::io::Error> {
-    let s = s.trim();
-    match s {
-        "0" => Ok(false),
-        "1" => Ok(true),
-        _ => Err(std::io::Error::new(
-            ErrorKind::Other,
-            format!("invalid boolean: `{}`", s),
-        )),
-    }
-}
-
-fn bool_to_str(value: bool) -> &'static str {
-    if value {
-        "1"
-    } else {
-        "0"
     }
 }

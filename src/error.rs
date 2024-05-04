@@ -22,6 +22,10 @@ pub enum Error {
     Base64Decode(base64::DecodeError),
     #[error("regex error: {0}")]
     Regex(#[from] regex::Error),
+    #[error("http error: {0}")]
+    Hyper(#[from] hyper::Error),
+    #[error("fmt error: {0}")]
+    Fmt(#[from] std::fmt::Error),
 }
 
 impl Error {

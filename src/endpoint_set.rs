@@ -19,6 +19,7 @@ use bincode::error::EncodeError;
 use bincode::BorrowDecode;
 use bincode::Decode;
 use bincode::Encode;
+use hyper::Uri;
 use regex::Regex;
 
 use crate::DnsName;
@@ -30,6 +31,7 @@ pub struct EndpointSet {
     socketaddrs: HashMap<SocketAddr, Option<DnsName>>,
     dns_names: HashSet<DnsName>,
     dns_name_patterns: Vec<Regex>,
+    uris: Vec<Uri>,
 }
 
 impl EndpointSet {
@@ -51,6 +53,15 @@ impl EndpointSet {
                 if pattern.is_match(name.as_str()) {
                     return true;
                 }
+            }
+        }
+        false
+    }
+
+    pub fn contains_uri(&self, other: &Uri) -> bool {
+        for uri in self.uris.iter() {
+            if uri == other {
+                return true;
             }
         }
         false
@@ -78,10 +89,15 @@ impl EndpointSet {
         Self::parse(other)
     }
 
+    pub fn allow_socketaddr(&mut self, socketaddr: SocketAddr) {
+        self.socketaddrs.insert(socketaddr, None);
+    }
+
     fn parse(other: &str) -> Result<Self, Error> {
         let mut socketaddrs: HashMap<SocketAddr, Option<DnsName>> = HashMap::new();
         let mut dns_names: HashSet<DnsName> = HashSet::new();
         let mut dns_name_patterns: Vec<Regex> = Vec::new();
+        let mut uris: Vec<Uri> = Vec::new();
         for word in other.split_whitespace() {
             let endpoint: Endpoint = word.parse().map_err(|e| {
                 Error::map(format!("failed to parse `{}` as endpoint: {}", word, e))
@@ -107,12 +123,16 @@ impl EndpointSet {
                 Endpoint::DnsNamePattern(regex) => {
                     dns_name_patterns.push(regex);
                 }
+                Endpoint::Uri(uri) => {
+                    uris.push(uri);
+                }
             }
         }
         Ok(Self {
             socketaddrs,
             dns_names,
             dns_name_patterns,
+            uris,
         })
     }
 }
@@ -127,6 +147,12 @@ impl Encode for EndpointSet {
             .map(ToString::to_string)
             .collect::<Vec<String>>();
         Encode::encode(&dns_name_patterns, encoder)?;
+        let uris = self
+            .uris
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<String>>();
+        Encode::encode(&uris, encoder)?;
         Ok(())
     }
 }
@@ -136,6 +162,7 @@ impl Decode for EndpointSet {
         let socketaddrs = Decode::decode(decoder)?;
         let dns_names = Decode::decode(decoder)?;
         let dns_name_patterns: Vec<String> = Decode::decode(decoder)?;
+        let uris: Vec<String> = Decode::decode(decoder)?;
         Ok(Self {
             socketaddrs,
             dns_names,
@@ -144,6 +171,11 @@ impl Decode for EndpointSet {
                 .map(|x| Regex::new(x.as_str()))
                 .collect::<Result<Vec<Regex>, _>>()
                 .map_err(|_| DecodeError::Other("invalid regex pattern"))?,
+            uris: uris
+                .into_iter()
+                .map(|x| x.parse::<Uri>())
+                .collect::<Result<Vec<Uri>, _>>()
+                .map_err(|_| DecodeError::Other("invalid uri"))?,
         })
     }
 }
@@ -153,6 +185,7 @@ impl<'de> BorrowDecode<'de> for EndpointSet {
         let socketaddrs = BorrowDecode::borrow_decode(decoder)?;
         let dns_names = BorrowDecode::borrow_decode(decoder)?;
         let dns_name_patterns: Vec<String> = BorrowDecode::borrow_decode(decoder)?;
+        let uris: Vec<String> = BorrowDecode::borrow_decode(decoder)?;
         Ok(Self {
             socketaddrs,
             dns_names,
@@ -161,6 +194,11 @@ impl<'de> BorrowDecode<'de> for EndpointSet {
                 .map(|x| Regex::new(x.as_str()))
                 .collect::<Result<Vec<Regex>, _>>()
                 .map_err(|_| DecodeError::Other("invalid regex pattern"))?,
+            uris: uris
+                .into_iter()
+                .map(|x| x.parse::<Uri>())
+                .collect::<Result<Vec<Uri>, _>>()
+                .map_err(|_| DecodeError::Other("invalid uri"))?,
         })
     }
 }
@@ -192,6 +230,7 @@ enum Endpoint {
     SocketAddr(SocketAddr),
     DnsNameAndPort { name: DnsName, port: Option<u16> },
     DnsNamePattern(Regex),
+    Uri(Uri),
 }
 
 impl FromStr for Endpoint {
@@ -200,6 +239,11 @@ impl FromStr for Endpoint {
         match other.parse::<SocketAddr>() {
             Ok(socketaddr) => Ok(Self::SocketAddr(socketaddr)),
             Err(_) => {
+                if let Ok(uri) = other.parse::<Uri>() {
+                    if uri.scheme_str().is_some() && uri.host().is_some() {
+                        return Ok(Self::Uri(uri));
+                    }
+                }
                 if other.contains('*') {
                     Ok(Self::DnsNamePattern(glob_to_regex(other)?))
                 } else {
@@ -277,10 +321,12 @@ mod tests {
     impl Arbitrary for EndpointSet {
         fn arbitrary(g: &mut quickcheck::Gen) -> Self {
             let dns_name_patterns: Vec<ArbitraryRegex> = Arbitrary::arbitrary(g);
+            let uris: Vec<ArbitraryUri> = Arbitrary::arbitrary(g);
             Self {
                 socketaddrs: Arbitrary::arbitrary(g),
                 dns_names: Arbitrary::arbitrary(g),
                 dns_name_patterns: dns_name_patterns.into_iter().map(|x| x.0).collect(),
+                uris: uris.into_iter().map(|x| x.0).collect(),
             }
         }
     }
@@ -301,6 +347,19 @@ mod tests {
             let i = prng.gen_range(0..labels.len());
             labels[i] = "*".to_string();
             Self(Regex::new(glob_to_regex(labels.join(".").as_str()).unwrap().as_str()).unwrap())
+        }
+    }
+
+    #[derive(Clone)]
+    struct ArbitraryUri(Uri);
+
+    impl Arbitrary for ArbitraryUri {
+        fn arbitrary(_: &mut quickcheck::Gen) -> Self {
+            let uri: Uri =
+                "abc://username:password@example.com:123/path/data?key=value&key2=value2#fragid1"
+                    .parse()
+                    .unwrap();
+            Self(uri)
         }
     }
 
