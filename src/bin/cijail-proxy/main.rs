@@ -65,7 +65,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     while let Some(comm) = communications.next().await {
         let uri = get_uri(&comm.request)?;
-        info!("uri {} request {:?}", uri, comm.request);
         let allow = allowed_endpoints.contains_uri(&uri);
         let status = if allow || is_dry_run {
             let _ = comm.request_back.send(comm.request);

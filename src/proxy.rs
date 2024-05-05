@@ -32,7 +32,12 @@ impl ProxyConfig {
         for name in ["no_proxy", "NO_PROXY"] {
             command.env_remove(name);
         }
-        command.env(SSL_CERT_FILE, self.ssl_cert_file_path.as_path());
+        {
+            let path = self.ssl_cert_file_path.as_path();
+            command.env(SSL_CERT_FILE, path);
+            command.env("GIT_SSL_CAINFO", path);
+            command.env("PIP_CERT", path);
+        }
         for (name, value) in command.get_envs() {
             let name = name.to_string_lossy();
             match value {

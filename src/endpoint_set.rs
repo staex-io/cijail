@@ -58,8 +58,9 @@ impl EndpointSet {
     }
 
     pub fn contains_uri(&self, other: &Uri) -> bool {
+        let other = other.to_string();
         for uri in self.uris.iter() {
-            if uri == other {
+            if other.starts_with(uri.to_string().as_str()) {
                 return true;
             }
         }
