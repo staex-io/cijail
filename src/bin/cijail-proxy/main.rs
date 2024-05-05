@@ -1,111 +1,183 @@
+use cijail::env_to_bool;
+use cijail::EndpointSet;
+use http::uri::PathAndQuery;
+use http::uri::Scheme;
+use hyper::body::Incoming;
+use hyper::StatusCode;
+use rcgen::CertifiedKey;
+use std::ffi::OsStr;
+use std::fs::File;
 use std::io::Write;
 use std::net::SocketAddr;
 use std::os::fd::FromRawFd;
-use std::sync::Arc;
+use std::os::unix::ffi::OsStrExt;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::Command;
 
-use cijail::env_to_bool;
-use cijail::EndpointSet;
+use cijail::Error;
 use cijail::Logger;
+use cijail::ProxyConfig;
+use cijail::ProxyUrl;
 use cijail::Uri;
 use cijail::CIJAIL_DRY_RUN;
 use cijail::CIJAIL_ENDPOINTS;
-use http::uri::PathAndQuery;
-use http::uri::Scheme;
-use http_body_util::combinators::BoxBody;
-use http_body_util::BodyExt;
-use http_body_util::Empty;
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::client::conn::http1 as http1_client;
-use hyper::server::conn::http1 as http1_server;
-use hyper::service::service_fn;
-use hyper::upgrade::Upgraded;
+use cijail::CIJAIL_ROOT_CERT_PEM;
+use cijail::SSL_CERT_FILE;
+use http_mitm_proxy::futures::StreamExt;
+use http_mitm_proxy::MitmProxy;
 use hyper::Request;
-use hyper::Response;
-use hyper::StatusCode;
-use hyper_rustls::ConfigBuilderExt;
-use hyper_rustls::HttpsConnectorBuilder;
-use hyper_util::client::legacy::connect::Connect;
-use hyper_util::rt::TokioIo;
-use hyper_util::{client::legacy::Client, rt::TokioExecutor};
-use log::error;
 use log::info;
 use socketpair::SocketpairStream;
-use tokio::net::TcpListener;
-use tokio::net::TcpStream;
+use tempfile::NamedTempFile;
+use tokio_native_tls::native_tls::TlsConnector;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Logger::init("cijail-proxy").map_err(|_| "failed to set logger")?;
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .map_err(|_| "failed to initi crypto provider")?;
-    let tls_config = rustls::ClientConfig::builder()
-        .with_native_roots()?
-        .with_no_client_auth();
-    let https = HttpsConnectorBuilder::new()
-        .with_tls_config(tls_config)
-        .https_or_http()
-        .enable_http1()
-        .enable_http2()
-        .build();
-    let client: Client<_, hyper::body::Incoming> =
-        Client::builder(TokioExecutor::new()).build(https);
-    let client = Arc::new(client);
     let is_dry_run = env_to_bool(CIJAIL_DRY_RUN)?;
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::from_base64(string.as_str())?,
         Err(_) => Default::default(),
     };
-    let http_listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
-    let http_socketaddr = http_listener.local_addr()?;
-    info!("listening for http connections on {}", http_socketaddr);
-    let https_listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await?;
-    let https_socketaddr = https_listener.local_addr()?;
-    info!("listening for https connections on {}", https_socketaddr);
-    let mut socket = unsafe { SocketpairStream::from_raw_fd(0) };
-    socket.write_all(http_socketaddr.port().to_ne_bytes().as_slice())?;
-    socket.write_all(https_socketaddr.port().to_ne_bytes().as_slice())?;
-    drop(socket);
-    let context = Arc::new(Context {
-        allowed_endpoints,
-        is_dry_run,
-    });
-    loop {
-        tokio::select! {
-            result = http_listener.accept() => {
-                let (stream, _) = result?;
-                let io = TokioIo::new(stream);
-                let context = context.clone();
-                let client = client.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = http1_server::Builder::new()
-                        .preserve_header_case(true)
-                            .title_case_headers(true)
-                            .serve_connection(
-                                io,
-                                service_fn(move |request| {
-                                    proxy(request, context.clone(), client.clone())
-                                }),
-                            )
-                            .with_upgrades()
-                            .await
-                    {
-                        info!("Failed to serve connection: {:?}", err);
-                    }
-                });
+    let root_cert = make_root_cert()?;
+    let root_cert_pem = root_cert.cert.pem();
+    std::env::set_var(CIJAIL_ROOT_CERT_PEM, root_cert_pem.as_str());
+    let ssl_cert_file = add_root_ca_to_openssl_cert_file(root_cert_pem.as_str())?;
+    let socketaddr = random_socketaddr()?;
+    let proxy = MitmProxy::new(Some(root_cert), TlsConnector::new()?);
+    let (mut communications, server) = proxy.bind(socketaddr).await?;
+    tokio::spawn(server);
+    {
+        let config = ProxyConfig {
+            http_url: ProxyUrl {
+                scheme: "http".into(),
+                socketaddr,
+            },
+            https_url: ProxyUrl {
+                scheme: "http".into(),
+                socketaddr,
+            },
+            ssl_cert_file_path: ssl_cert_file.path().into(),
+        };
+        let mut socket = unsafe { SocketpairStream::from_raw_fd(0) };
+        config.write(&mut socket)?;
+    }
+    while let Some(comm) = communications.next().await {
+        let uri = get_uri(&comm.request)?;
+        info!("uri {} request {:?}", uri, comm.request);
+        let allow = allowed_endpoints.contains_uri(&uri);
+        let status = if allow || is_dry_run {
+            let _ = comm.request_back.send(comm.request);
+            match comm.response.await {
+                Ok(Ok(response)) => Some(response.status()),
+                _ => None,
             }
-            _result = https_listener.accept() => {
+        } else {
+            None
+        };
+        print_decision(is_dry_run, allow, &uri, status)?;
+    }
+    Ok(())
+}
+
+fn make_root_cert() -> Result<CertifiedKey, Error> {
+    let mut param = rcgen::CertificateParams::default();
+    param.distinguished_name = rcgen::DistinguishedName::new();
+    param.distinguished_name.push(
+        rcgen::DnType::CommonName,
+        rcgen::DnValue::Utf8String("<Cijail CA>".to_string()),
+    );
+    param.key_usages = vec![
+        rcgen::KeyUsagePurpose::KeyCertSign,
+        rcgen::KeyUsagePurpose::CrlSign,
+    ];
+    param.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let key_pair = rcgen::KeyPair::generate()?;
+    let cert = param.self_signed(&key_pair)?;
+    Ok(CertifiedKey { cert, key_pair })
+}
+
+fn random_socketaddr() -> Result<SocketAddr, cijail::Error> {
+    let listener = std::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))?;
+    let socketaddr = listener.local_addr()?;
+    Ok(socketaddr)
+}
+
+fn add_root_ca_to_openssl_cert_file(root_cert_pem: &str) -> Result<NamedTempFile, Error> {
+    let original_path = get_openssl_cert_file_path()?;
+    info!("openssl cert file: {}", original_path.display());
+    let mut named_temp_file = NamedTempFile::new()?;
+    let mut new_file = named_temp_file.as_file_mut();
+    let mut original_file = File::open(original_path)?;
+    std::io::copy(&mut original_file, &mut new_file)?;
+    writeln!(&mut new_file, "{}", root_cert_pem)?;
+    Ok(named_temp_file)
+}
+
+fn get_openssl_cert_file_path() -> Result<PathBuf, Error> {
+    match std::env::var_os(SSL_CERT_FILE) {
+        Some(file) => Ok(Path::new(file.as_os_str()).into()),
+        None => {
+            let mut command = Command::new("openssl");
+            command.args(["version", "-d"]);
+            let args = get_args(&command);
+            let output = command.output()?;
+            match output.status.code() {
+                None => {
+                    return Err(Error::map(format!(
+                        "failed to run `{}`: terminated by signal",
+                        args
+                    )))
+                }
+                Some(ret) if ret != 0 => {
+                    return Err(Error::map(format!(
+                        "failed to run `{}`: exit code {}",
+                        args, ret
+                    )));
+                }
+                _ => {}
+            }
+            let i = output.stdout.iter().position(|ch| ch == &b'"');
+            let j = output.stdout.iter().rposition(|ch| ch == &b'"');
+            match (i, j) {
+                (Some(i), Some(j)) => {
+                    let s = OsStr::from_bytes(&output.stdout[(i + 1)..j]);
+                    let openssl_dir = Path::new(s);
+                    for suffix in [
+                        "certs/ca-certificates.crt", // deb-based distributions
+                        "certs/ca-bundle.crt",       // rpm-based distributions
+                        "cert.pem",                  // rpm-based distributions
+                    ] {
+                        let path = openssl_dir.join(suffix);
+                        if path.exists() {
+                            return Ok(path);
+                        }
+                    }
+                    Err(Error::map(format!(
+                        "Failed to find CA bundle in `{}`. Please, specify it for cijail using {} variable.",
+                        openssl_dir.display(),
+                        SSL_CERT_FILE,
+                    )))
+                }
+                _ => Err(Error::map(format!(
+                    "invalid output from `{}`: `{}`",
+                    args,
+                    String::from_utf8_lossy(output.stdout.as_slice()).trim()
+                ))),
             }
         }
     }
 }
 
-async fn proxy<T: Connect + Clone + Send + Sync + 'static>(
-    request: Request<hyper::body::Incoming>,
-    context: Arc<Context>,
-    client: Arc<Client<T, hyper::body::Incoming>>,
-) -> Result<Response<BoxBody<Bytes, hyper::Error>>, cijail::Error> {
+fn get_args(command: &Command) -> String {
+    let mut args: Vec<String> = Vec::new();
+    args.push(command.get_program().to_string_lossy().to_string());
+    args.extend(command.get_args().map(|x| x.to_string_lossy().to_string()));
+    args.join(" ")
+}
+
+fn get_uri(request: &Request<Incoming>) -> Result<Uri, cijail::Error> {
     let uri = request.uri();
     let uri = if uri.scheme_str().is_some() {
         uri.to_owned()
@@ -118,103 +190,14 @@ async fn proxy<T: Connect + Clone + Send + Sync + 'static>(
         hyper::Uri::from_parts(parts)?
     };
     let uri: Uri = uri.try_into()?;
-    info!("uri {}", uri);
-    let result = match do_proxy(request, &uri, context.clone(), client).await {
-        Err(cijail::Error::Deny) => {
-            let response = Response::new(Bytes::from("cijail: denied"));
-            let (mut parts, body) = response.into_parts();
-            parts.status = StatusCode::IM_A_TEAPOT;
-            let response = Response::from_parts(parts, body);
-            Ok((
-                response.map(|b| Full::new(b).map_err(|e| match e {}).boxed()),
-                false,
-            ))
-        }
-        other => other,
-    };
-    match result {
-        Ok((response, allow)) => {
-            print_decision(context.is_dry_run, allow, &uri, response.status())?;
-            Ok(response)
-        }
-        Err(e) => Err(e),
-    }
-}
-
-async fn do_proxy<T: Connect + Clone + Send + Sync + 'static>(
-    request: Request<hyper::body::Incoming>,
-    uri: &Uri,
-    context: Arc<Context>,
-    client: Arc<Client<T, hyper::body::Incoming>>,
-) -> Result<(Response<BoxBody<Bytes, hyper::Error>>, bool), cijail::Error> {
-    let allow = context.allowed_endpoints.contains_uri(uri);
-    if !context.is_dry_run && !allow {
-        return Err(cijail::Error::Deny);
-    }
-    let stream = TcpStream::connect((uri.host.as_str(), uri.port)).await?;
-    let io = TokioIo::new(stream);
-    let response = match uri.scheme.as_str() {
-        "http" => {
-            // TODO replace with `client`
-            let (mut sender, conn) = http1_client::Builder::new()
-                .preserve_header_case(true)
-                .title_case_headers(true)
-                .handshake(io)
-                .await?;
-            tokio::spawn(async move {
-                if let Err(e) = conn.await {
-                    error!("failed to connect: {}", e);
-                }
-            });
-            let response = sender.send_request(request).await?;
-            response.map(|b| (b.boxed()))
-        }
-        "https" => {
-            if request.method() == "CONNECT" {
-                let socketaddrs = context.allowed_endpoints.resolve_dns_name(&uri.host);
-                if socketaddrs.is_empty() || !socketaddrs.iter().any(|x| x.port() == uri.port) {
-                    return Err(cijail::Error::Deny);
-                }
-                let socketaddr = socketaddrs[0];
-                tokio::spawn(async move {
-                    match hyper::upgrade::on(request).await {
-                        Ok(upgraded) => {
-                            if let Err(e) = tunnel(upgraded, socketaddr).await {
-                                error!("server io error: {}", e);
-                            };
-                        }
-                        Err(e) => error!("upgrade error: {}", e),
-                    }
-                });
-                Response::new(
-                    Empty::<Bytes>::new()
-                        .map_err(|never| match never {})
-                        .boxed(),
-                )
-            } else {
-                let response = client.request(request).await?;
-                response.map(|x| x.boxed())
-            }
-        }
-        _ => {
-            return Err(cijail::Error::Deny);
-        }
-    };
-    Ok((response, allow))
-}
-
-async fn tunnel(upgraded: Upgraded, socketaddr: SocketAddr) -> std::io::Result<()> {
-    let mut server = TcpStream::connect(socketaddr).await?;
-    let mut upgraded = TokioIo::new(upgraded);
-    tokio::io::copy_bidirectional(&mut upgraded, &mut server).await?;
-    Ok(())
+    Ok(uri)
 }
 
 fn print_decision(
     is_dry_run: bool,
     allow: bool,
     uri: &Uri,
-    status: StatusCode,
+    status: Option<StatusCode>,
 ) -> Result<(), std::fmt::Error> {
     use std::fmt::Write;
     let mut buf = String::with_capacity(4096);
@@ -222,12 +205,11 @@ fn print_decision(
         write!(&mut buf, "DRYRUN ")?;
     }
     write!(&mut buf, "{}", if allow { "allow" } else { "deny" })?;
-    write!(&mut buf, " {} {}", status.as_u16(), uri)?;
+    match status {
+        Some(status) => write!(&mut buf, " {}", status.as_u16())?,
+        None => write!(&mut buf, " -")?,
+    }
+    write!(&mut buf, " {}", uri)?;
     info!("{}", buf);
     Ok(())
-}
-
-struct Context {
-    allowed_endpoints: EndpointSet,
-    is_dry_run: bool,
 }

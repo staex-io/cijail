@@ -1,8 +1,6 @@
 use std::ffi::c_int;
 use std::ffi::OsString;
 use std::io::ErrorKind;
-use std::io::Read;
-use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Child;
@@ -17,6 +15,7 @@ use cijail::env_to_bool;
 use cijail::EndpointSet;
 use cijail::Error;
 use cijail::Logger;
+use cijail::ProxyConfig;
 use cijail::CIJAIL_DRY_RUN;
 use cijail::CIJAIL_ENDPOINTS;
 use clap::Parser;
@@ -77,8 +76,7 @@ fn drop_capabilities() -> Result<(), CapsError> {
 fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
-    http_port: u16,
-    _https_port: u16,
+    proxy_config: ProxyConfig,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     if args.is_empty() {
         return Err("please specify the command to run".into());
@@ -86,13 +84,7 @@ fn spawn_tracee_process(
     let arg0 = args.remove(0);
     let mut child = Command::new(arg0.clone());
     child.args(args.clone());
-    for name in ["http_proxy", "HTTP_PROXY"] {
-        child.env(name, format!("http://127.0.0.1:{}", http_port));
-    }
-    for name in ["https_proxy", "HTTPS_PROXY"] {
-        child.env(name, format!("http://127.0.0.1:{}", http_port));
-    }
-    child.env_remove("no_proxy");
+    proxy_config.setenv(&mut child);
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -164,7 +156,7 @@ fn spawn_proxy_process(
     allowed_endpoints: &EndpointSet,
     is_dry_run: bool,
     allow_loopback: bool,
-) -> Result<(Child, u16, u16), Box<dyn std::error::Error>> {
+) -> Result<(Child, ProxyConfig), Box<dyn std::error::Error>> {
     let mut sockets = socketpair_stream()?;
     let arg0 = std::env::args_os()
         .next()
@@ -185,12 +177,8 @@ fn spawn_proxy_process(
     let child = child
         .spawn()
         .map_err(move |e| format!("failed to run `{}`: {}", arg0.to_string_lossy(), e))?;
-    let mut proxy_port_bytes = [0_u8; 2];
-    sockets.1.read_exact(&mut proxy_port_bytes)?;
-    let http_port = u16::from_ne_bytes(proxy_port_bytes);
-    sockets.1.read_exact(&mut proxy_port_bytes)?;
-    let https_port = u16::from_ne_bytes(proxy_port_bytes);
-    Ok((child, http_port, https_port))
+    let config = ProxyConfig::read(&mut sockets.1)?;
+    Ok((child, config))
 }
 
 #[derive(Parser)]
@@ -245,14 +233,14 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         Err(_) => Default::default(),
     };
     let (socket0, socket1) = socketpair_stream()?;
-    let (mut proxy, http_port, https_port) = spawn_proxy_process(
+    let (mut proxy, proxy_config) = spawn_proxy_process(
         &allowed_endpoints,
         is_dry_run || args.dry_run,
         allow_loopback || args.allow_loopback,
     )?;
-    allowed_endpoints.allow_socketaddr(SocketAddr::from(([127, 0, 0, 1], http_port)));
-    allowed_endpoints.allow_socketaddr(SocketAddr::from(([127, 0, 0, 1], https_port)));
-    let mut tracee = spawn_tracee_process(socket0, args.command, http_port, https_port)?;
+    allowed_endpoints.allow_socketaddr(proxy_config.http_url.socketaddr);
+    allowed_endpoints.allow_socketaddr(proxy_config.https_url.socketaddr);
+    let mut tracee = spawn_tracee_process(socket0, args.command, proxy_config)?;
     let mut tracer = spawn_tracer_process(
         socket1,
         &allowed_endpoints,

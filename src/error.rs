@@ -29,8 +29,8 @@ pub enum Error {
     Fmt(#[from] std::fmt::Error),
     #[error("uri error: {0}")]
     Uri(#[from] InvalidUriParts),
-    #[error("https client error: {0}")]
-    HyperClient(#[from] hyper_util::client::legacy::Error),
+    #[error("rcgen error: {0}")]
+    Rcgen(#[from] rcgen::Error),
     #[error("denied")]
     Deny,
 }

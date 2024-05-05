@@ -17,10 +17,18 @@ allow = [
 [licenses.private]
 ignore = true
 
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC"
+license-files = [
+  { path = "LICENSE", hash = 0xbd0eed23 },
+]
+
 [bans]
 multiple-versions = "warn"
 wildcards = "warn"
 highlight = "all"
+skip-tree = ["windows-sys"]
 
 [sources]
 unknown-registry = "deny"
