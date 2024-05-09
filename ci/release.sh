@@ -1,10 +1,13 @@
 #!/bin/sh
 set -ex
-# TODO
+# TODO draft
 #if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
 #    exit 0
 #fi
-curl -sL \
+curl \
+    --silent \
+    --fail \
+    --location \
     -X POST \
     -H "Accept: application/vnd.github+json" \
     -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -17,7 +20,7 @@ curl -sL \
     "target_commitish":"'"$GITHUB_SHA"'",
     "name":"'"$GITHUB_REF_NAME"'",
     "body":"'"Release $GITHUB_REF_NAME"'",
-    "draft":false,
+    "draft":true,
     "prerelease":false,
     "generate_release_notes":true
 }'
@@ -26,7 +29,10 @@ release_id="$(jq -r .id /tmp/response)"
 for dir in packages/*; do
     for file in "$dir"/*; do
         name="$(basename "$file")"
-        curl -sL \
+        curl \
+            --silent \
+            --fail \
+            --location \
             -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \

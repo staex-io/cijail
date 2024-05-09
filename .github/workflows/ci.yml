@@ -19,7 +19,7 @@ jobs:
         https://pypi.org/simple/
         https://files.pythonhosted.org/packages/
         https://static.crates.io/crates/
-        https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/
+        https://uploads.github.com/repos/staex-io/cijail/releases/
         https://index.crates.io/
     steps:
       - name: Checkout
