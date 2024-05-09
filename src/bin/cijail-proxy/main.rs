@@ -121,7 +121,9 @@ fn get_openssl_cert_file_path() -> Result<PathBuf, Error> {
             let mut command = Command::new("openssl");
             command.args(["version", "-d"]);
             let args = get_args(&command);
-            let output = command.output()?;
+            let output = command
+                .output()
+                .map_err(|e| Error::map(format!("failed to run `openssl` command: {}", e)))?;
             match output.status.code() {
                 None => {
                     return Err(Error::map(format!(

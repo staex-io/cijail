@@ -100,12 +100,21 @@ impl From<SocketAddr> for AnySocketAddr {
 
 fn unix_addr_to_vec(unix: UnixAddr) -> Vec<u8> {
     match (unix.path(), unix.as_abstract()) {
-        (Some(path), _) => path.as_os_str().as_bytes().to_vec(),
+        (Some(path), _) => {
+            let mut vec = path.as_os_str().as_bytes().to_vec();
+            if let Some(n) = vec.iter().position(|x| x == &0_u8) {
+                vec.truncate(n);
+            }
+            vec
+        }
         (_, Some(bytes)) => {
-            let mut s: Vec<u8> = Vec::new();
-            s.push(b'@');
-            s.extend(bytes);
-            s
+            let mut vec: Vec<u8> = Vec::new();
+            vec.push(b'@');
+            vec.extend(match bytes.iter().position(|x| x == &0_u8) {
+                Some(n) => &bytes[..n],
+                None => bytes,
+            });
+            vec
         }
         _ => b"[unnamed]".to_vec(),
     }

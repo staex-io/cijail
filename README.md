@@ -3,7 +3,7 @@
 Cijail is a CI/CD pipeline process jail that helps prevent supply chain attacks.
 Cijail filters outgoing network traffic in accordance with
 - allow list of HTTP/HTTPS URLs,
-- allow list of endpoints (specified by an IP address and a port) and
+- allow list of endpoints (specified by an IP:PORT, UNIX domain socket path or netlink socket) and
 - allow list of DNS names.
 
 **By default the outgoing traffic for all domain names, IP addresses and ports is blocked.**
@@ -66,6 +66,7 @@ https://github.com/    # allow HTTPS packets to/from github.com:443 with a URL s
 one.one.one.one        # allow DNS packets that resolve `one.one.one.one` to IP addresses
 @/tmp/unix             # allow packets to/from abstract UNIX socket with path "\0/tmp/unix"
 /tmp/unix              # allow packets to/from named UNIX socket with path "/tmp/unix"
+[netlink]              # allow packets to/from netlink socket
 ```
 
 
@@ -74,18 +75,7 @@ one.one.one.one        # allow DNS packets that resolve `one.one.one.one` to IP 
 Add the following lines to your `Dockerfile`.
 
 ```dockerfile
-RUN cijail_version=0.6.0 glibc_version=glibc-2.31\
-    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz \
-    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz-sha256sum.txt \
-    && cd /tmp \
-    && sha256sum -c /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
-    && cd - \
-    && tar -C /usr/local -xf /tmp/cijail-$glibc_version.tar.gz \
-    && rm /tmp/cijail-$glibc_version.tar.gz* \
-    && cijail --version
-
+COPY --from=ghcr.io/staex-io/cijail:latest / /usr/local
 ENTRYPOINT ["/usr/local/bin/cijail"]
 ```
 
