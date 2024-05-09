@@ -3,7 +3,7 @@
 Cijail is a CI/CD pipeline process jail that helps prevent supply chain attacks.
 Cijail filters outgoing network traffic in accordance with
 - allow list of HTTP/HTTPS URLs,
-- allow list of endpoints (specified by an IP address and a port) and
+- allow list of endpoints (specified by an IP:PORT, UNIX domain socket path or netlink socket) and
 - allow list of DNS names.
 
 **By default the outgoing traffic for all domain names, IP addresses and ports is blocked.**

@@ -14,7 +14,7 @@ RUN apt-get -qq update \
     jq \
     dnsutils \
     bind9-utils \
-    docker \
+    docker.io \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --quiet --no-cache-dir --no-input lcov_cobertura==2.0.*
