@@ -46,15 +46,17 @@ $ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
 Add the following lines to your `Dockerfile`.
 
 ```dockerfile
-RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.4.2 \
-    && curl \
-    --silent \
-    --fail \
-    --location \
-    --output /usr/local/bin/cijail \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version \
-    && chmod +x /usr/local/bin/cijail
+RUN cijail_version=https-proxy glibc_version=glibc-2.31\
+    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz \
+    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz \
+    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    && cd /tmp \
+    && sha256sum -c /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    && cd - \
+    && tar -C /usr/local -xf /tmp/cijail-$glibc_version.tar.gz \
+    && rm /tmp/cijail-$glibc_version.tar.gz* \
+    && cijail --version
 
 ENTRYPOINT ["/usr/local/bin/cijail"]
 ```

@@ -1,10 +1,9 @@
 #!/bin/sh
 
 set -ex
-# TODO
-#if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
-#    exit 0
-#fi
+if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
+    exit 0
+fi
 rust_flags="-Ccodegen-units=1 -Cstrip=symbols -Copt-level=3 -Cincremental=false -Clto=yes -Cembed-bitcode=yes"
 target=x86_64-unknown-linux-gnu
 export LIBSECCOMP_LINK_TYPE=static
