@@ -1,6 +1,4 @@
 #!/bin/sh
 set -ex
-if test -z ${CI+x}; then
-    exit 0
-fi
+git config --global --add safe.directory "$PWD"
 printf "nameserver 9.9.9.9\n" >/etc/resolv.conf
