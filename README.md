@@ -51,7 +51,7 @@ The output looks like the following.
 
 - Use `CIJAIL_ENDPOINTS` to restrict which endpoints are allowed to be sent traffic to.
   These can be DNS names (i.e. allow only name resolution, but not the traffic),
-  DNS names plus port, IP address plus port, HTTP/HTTPS URL.
+  DNS names plus port, IP address plus port, HTTP/HTTPS URL, UNIX socket paths.
 - Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
   Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
   Dry run always fails.
@@ -133,5 +133,4 @@ To do that add the following lines to `/etc/gitlab-runner/config.toml`.
 - You can not run `cijail` inside another `cijail`. We are investigating the issue.
 - Cijail **must be** the first process that you run in the Docker container
   because it controls only its descendants.
-  Usually this is not a problem in CI/CD,
-  but on the local computer something like [NSCD](https://man7.org/linux/man-pages/man8/nscd.8.html) can easily circumvent the jail.
+  Usually this is not a problem in CI/CD.

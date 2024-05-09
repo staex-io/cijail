@@ -1,3 +1,4 @@
+mod any_socket_addr;
 mod dns_name;
 mod dns_packet;
 mod endpoint_set;
@@ -7,6 +8,7 @@ mod logger;
 mod proxy;
 mod uri;
 
+pub use self::any_socket_addr::*;
 pub use self::dns_name::*;
 pub use self::dns_packet::*;
 pub use self::endpoint_set::*;

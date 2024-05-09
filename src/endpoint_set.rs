@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::fmt::Write;
@@ -20,6 +21,7 @@ use bincode::Decode;
 use bincode::Encode;
 use regex::Regex;
 
+use crate::AnySocketAddr;
 use crate::DnsName;
 use crate::Error;
 use crate::Uri;
@@ -28,16 +30,26 @@ use crate::Uri;
 #[cfg_attr(test, derive(Clone, Debug))]
 pub struct EndpointSet {
     socketaddrs: HashMap<SocketAddr, Vec<DnsName>>,
+    other_socketaddrs: HashSet<AnySocketAddr>,
     dns_names: HashMap<DnsName, Vec<SocketAddr>>,
     dns_name_patterns: Vec<Regex>,
     pub uris: Vec<Uri>,
 }
 
 impl EndpointSet {
-    pub fn contains_any_socket_address(&self, addrs: &[SocketAddr]) -> bool {
+    pub fn contains_any_socket_address(&self, addrs: &[AnySocketAddr]) -> bool {
         for addr in addrs.iter() {
-            if self.socketaddrs.contains_key(addr) {
-                return true;
+            match addr {
+                AnySocketAddr::Ip(addr) => {
+                    if self.socketaddrs.contains_key(addr) {
+                        return true;
+                    }
+                }
+                _ => {
+                    if self.other_socketaddrs.contains(addr) {
+                        return true;
+                    }
+                }
             }
         }
         false
@@ -102,6 +114,7 @@ impl EndpointSet {
 
     fn parse(other: &str) -> Result<Self, Error> {
         let mut socketaddrs: HashMap<SocketAddr, Vec<DnsName>> = HashMap::new();
+        let mut other_socketaddrs: HashSet<AnySocketAddr> = HashSet::new();
         let mut dns_names: HashMap<DnsName, Vec<SocketAddr>> = HashMap::new();
         let mut dns_name_patterns: Vec<Regex> = Vec::new();
         let mut uris: Vec<Uri> = Vec::new();
@@ -110,9 +123,14 @@ impl EndpointSet {
                 Error::map(format!("failed to parse `{}` as endpoint: {}", word, e))
             })?;
             match endpoint {
-                Endpoint::SocketAddr(socketaddr) => {
-                    socketaddrs.entry(socketaddr).or_default();
-                }
+                Endpoint::SocketAddr(socketaddr) => match socketaddr {
+                    AnySocketAddr::Ip(socketaddr) => {
+                        socketaddrs.entry(socketaddr).or_default();
+                    }
+                    _ => {
+                        other_socketaddrs.insert(socketaddr);
+                    }
+                },
                 Endpoint::DnsNameAndPort { name, port } => {
                     let mut name_socketaddrs: Vec<SocketAddr> = Vec::new();
                     if let Some(port) = port {
@@ -154,6 +172,7 @@ impl EndpointSet {
         }
         Ok(Self {
             socketaddrs,
+            other_socketaddrs,
             dns_names,
             dns_name_patterns,
             uris,
@@ -164,6 +183,7 @@ impl EndpointSet {
 impl Encode for EndpointSet {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         Encode::encode(&self.socketaddrs, encoder)?;
+        Encode::encode(&self.other_socketaddrs, encoder)?;
         Encode::encode(&self.dns_names, encoder)?;
         let dns_name_patterns = self
             .dns_name_patterns
@@ -184,11 +204,13 @@ impl Encode for EndpointSet {
 impl Decode for EndpointSet {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let socketaddrs = Decode::decode(decoder)?;
+        let other_socketaddrs = Decode::decode(decoder)?;
         let dns_names = Decode::decode(decoder)?;
         let dns_name_patterns: Vec<String> = Decode::decode(decoder)?;
         let uris: Vec<String> = Decode::decode(decoder)?;
         Ok(Self {
             socketaddrs,
+            other_socketaddrs,
             dns_names,
             dns_name_patterns: dns_name_patterns
                 .into_iter()
@@ -207,11 +229,13 @@ impl Decode for EndpointSet {
 impl<'de> BorrowDecode<'de> for EndpointSet {
     fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let socketaddrs = BorrowDecode::borrow_decode(decoder)?;
+        let other_socketaddrs = BorrowDecode::borrow_decode(decoder)?;
         let dns_names = BorrowDecode::borrow_decode(decoder)?;
         let dns_name_patterns: Vec<String> = BorrowDecode::borrow_decode(decoder)?;
         let uris: Vec<String> = BorrowDecode::borrow_decode(decoder)?;
         Ok(Self {
             socketaddrs,
+            other_socketaddrs,
             dns_names,
             dns_name_patterns: dns_name_patterns
                 .into_iter()
@@ -251,7 +275,7 @@ impl Display for EndpointSet {
 }
 
 enum Endpoint {
-    SocketAddr(SocketAddr),
+    SocketAddr(AnySocketAddr),
     DnsNameAndPort { name: DnsName, port: Option<u16> },
     DnsNamePattern(Regex),
     Uri(Uri),
@@ -260,7 +284,7 @@ enum Endpoint {
 impl FromStr for Endpoint {
     type Err = Error;
     fn from_str(other: &str) -> Result<Self, Self::Err> {
-        match other.parse::<SocketAddr>() {
+        match other.parse::<AnySocketAddr>() {
             Ok(socketaddr) => Ok(Self::SocketAddr(socketaddr)),
             Err(_) => {
                 if let Ok(uri) = other.parse::<Uri>() {
@@ -345,6 +369,7 @@ mod tests {
             let dns_name_patterns: Vec<ArbitraryRegex> = Arbitrary::arbitrary(&mut g3);
             Self {
                 socketaddrs: Arbitrary::arbitrary(&mut g3),
+                other_socketaddrs: Default::default(), // TODO
                 dns_names: Arbitrary::arbitrary(&mut g3),
                 dns_name_patterns: dns_name_patterns.into_iter().map(|x| x.0).collect(),
                 uris: Arbitrary::arbitrary(&mut g3),
