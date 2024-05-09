@@ -22,7 +22,7 @@ LABEL org.opencontainers.image.version=$cijail_version
 LABEL org.opencontainers.image.licenses=MIT
 LABEL org.opencontainers.image.vendor=Staex
 EOF
-    docker build --tag "$tag":latest "$workdir"
+    docker build --tag "$tag":latest --tag "$tag":"$cijail_version" "$workdir"
 }
 
 test_docker_image() {
