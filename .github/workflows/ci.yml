@@ -39,5 +39,7 @@ jobs:
         run: cijail ./ci/binaries.sh
       - name: Packages
         run: cijail ./ci/packages.sh
+      - name: Docker images
+        run: cijail ./ci/containers.sh
       - name: Release
         run: cijail ./ci/release.sh
