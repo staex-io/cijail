@@ -5,11 +5,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail-ci:latest@sha256:2db69bd7e43b933743a18f99da4c9dc0b3329a3771b4bc64c37c683e01015809
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:0afc0399b3869a897bf99cbb5489334c29f1978941118cd551a729956b143eba
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
-      options: --cap-add SYS_PTRACE
+      options: --cap-add SYS_PTRACE --volume "/var/run/docker.sock:/var/run/docker.sock"
     env:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
@@ -40,6 +40,6 @@ jobs:
       - name: Packages
         run: cijail ./ci/packages.sh
       - name: Docker images
-        run: cijail ./ci/containers.sh
+        run: ./ci/containers.sh
       - name: Release
         run: cijail ./ci/release.sh
