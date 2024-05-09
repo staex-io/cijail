@@ -37,6 +37,7 @@ impl ProxyConfig {
             command.env(SSL_CERT_FILE, path);
             command.env("GIT_SSL_CAINFO", path);
             command.env("PIP_CERT", path);
+            command.env("NODE_EXTRA_CA_CERTS", path);
         }
         for (name, value) in command.get_envs() {
             let name = name.to_string_lossy();

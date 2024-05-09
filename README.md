@@ -16,14 +16,14 @@ whereas Github Actions runners require.
 The capability is dropped before the command is executed.
 
 URL filtering is implemented using HTTP/HTTPS proxy that runs locally.
-We automatically set the usual `http_proxy` and `https_proxy` variables.
-This is enough for most applications.
-Please, create an issue if some applications do not work.
+We automatically set the usual `http_proxy` and `https_proxy` variables,
+and similar variables for `git`, `pip`, `npm` etc.
+Please, create an issue if your build tool does not work.
 
 HTTPS proxy creates root CA certificate that is used to sign every response sent to the client.
 Currently this CA certificate is automatically installed as trusted into the system store.
 Usually this is enough to make most of the applications recognize it as trusted.
-Please, create an issue if some applications do not work.
+Please, create an issue if your build tool does not work.
 
 
 # Usage
@@ -78,8 +78,6 @@ Add the following lines to your `Dockerfile`.
 COPY --from=ghcr.io/staex-io/cijail:latest / /usr/local
 ENTRYPOINT ["/usr/local/bin/cijail"]
 ```
-
-If there is no matching glibc version, try to choose the lowest one (currently `glibc-2.31`).
 
 Then in your CI/CD pipeline define a list of allowed domain names and endpoints.
 
