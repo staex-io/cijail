@@ -20,11 +20,6 @@ repos:
           -D clippy::expect_used -D clippy::panic
         types: [rust]
         pass_filenames: false
-      - id: cargo-deny
-        name: cargo deny
-        language: system
-        entry: cargo deny --offline check
-        pass_filenames: false
       - id: shellcheck
         name: shellcheck
         language: system

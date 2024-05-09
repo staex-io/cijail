@@ -28,8 +28,10 @@ jobs:
         run: ./ci/dns.sh
       - name: Lint
         run: cijail ./ci/lint.sh
+      - name: Cargo deny warmup
+        run: cijail ./ci/cargo-deny-warmup.sh
       - name: Cargo deny
-        run: cargo deny check
+        run: cargo deny --offline check --disable-fetch
       - name: Test
         run: ./ci/test.sh
       - name: Binaries
