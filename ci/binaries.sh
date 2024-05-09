@@ -5,6 +5,10 @@ rust_flags="-Ccodegen-units=1 -Cstrip=symbols -Copt-level=3 -Cincremental=false 
 target=x86_64-unknown-linux-gnu
 export LIBSECCOMP_LINK_TYPE=static
 export LIBSECCOMP_LIB_PATH=/usr/lib/x86_64-linux-gnu
+export OPENSSL_STATIC=1
+export OPENSSL_DIR=/usr
+export OPENSSL_LIB_DIR=/usr/lib/x86_64-linux-gnu
+export OPENSSL_NO_VENDOR=1
 glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')"
 env RUSTFLAGS="$rust_flags" \
     cargo build \
