@@ -30,20 +30,19 @@ jobs:
         uses: actions/checkout@v4.1.4
       - name: DNS
         run: ./ci/dns.sh
-        # TODO
-        #- name: Lint
-        #  run: cijail ./ci/lint.sh
-        #- name: Cargo deny warm-up
-        #  run: cijail ./ci/cargo-deny-warm-up.sh
-        #- name: Cargo deny
-        #  run: cargo deny check
-        #- name: Test
-        #  run: ./ci/test.sh
+      - name: Lint
+        run: cijail ./ci/lint.sh
+      - name: Cargo deny warm-up
+        run: cijail ./ci/cargo-deny-warm-up.sh
+      - name: Cargo deny
+        run: cargo deny check
+      - name: Test
+        run: ./ci/test.sh
       - name: Binaries
         run: cijail ./ci/binaries.sh
       - name: Packages
         run: cijail ./ci/packages.sh
       - name: Docker images
         run: ./ci/containers.sh
-        #- name: Release
-        #  run: cijail ./ci/release.sh
+      - name: Release
+        run: cijail ./ci/release.sh
