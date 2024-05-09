@@ -56,6 +56,9 @@ do_test_docker_image() {
 
 push_docker_image() {
     if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" = "tag"; then
+        set +x
+        printf '%s' "$GHCR_TOKEN" | docker login --username token --password-stdin ghcr.io
+        set -x
         docker push "$tag":latest
         docker push "$tag":"$cijail_version"
     fi

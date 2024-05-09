@@ -16,6 +16,7 @@ jobs:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
       CIJAIL_ENDPOINTS: |
         https://github.com/lyz-code/yamlfix/
         https://pypi.org/simple/
