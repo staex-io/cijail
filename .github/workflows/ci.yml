@@ -10,6 +10,8 @@ jobs:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
       options: --cap-add SYS_PTRACE --volume "/var/run/docker.sock:/var/run/docker.sock"
+    permissions:
+      packages: write
     env:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
