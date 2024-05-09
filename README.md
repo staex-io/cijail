@@ -74,7 +74,7 @@ one.one.one.one        # allow DNS packets that resolve `one.one.one.one` to IP 
 Add the following lines to your `Dockerfile`.
 
 ```dockerfile
-RUN cijail_version=https-proxy glibc_version=glibc-2.31\
+RUN cijail_version=0.6.0 glibc_version=glibc-2.31\
     && curl -fL -o /tmp/cijail-$glibc_version.tar.gz \
     https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz \
     && curl -fL -o /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
