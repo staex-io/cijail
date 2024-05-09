@@ -154,7 +154,13 @@ impl Display for Uri {
         if let Some(credentials) = self.credentials.as_ref() {
             write!(f, "{}:{}@", credentials.username, credentials.password)?;
         }
-        write!(f, "{}:{}{}", self.host, self.port, self.path)?;
+        write!(f, "{}", self.host)?;
+        if !(self.scheme.as_str().eq_ignore_ascii_case("http") && self.port == HTTP_PORT
+            || self.scheme.as_str().eq_ignore_ascii_case("https") && self.port == HTTPS_PORT)
+        {
+            write!(f, ":{}", self.port)?;
+        }
+        write!(f, "{}", self.path)?;
         if !self.query.is_empty() {
             write!(f, "?{}", self.query)?;
         }
@@ -200,6 +206,14 @@ mod tests {
         assert_eq!(
             "https://staex.io/".parse::<Uri>().unwrap(),
             "HTTPS://STAEX.IO/".parse::<Uri>().unwrap()
+        );
+        assert_eq!(
+            "https://staex.io:443/".parse::<Uri>().unwrap(),
+            "https://staex.io/".parse::<Uri>().unwrap()
+        );
+        assert_eq!(
+            "http://staex.io:80/".parse::<Uri>().unwrap(),
+            "http://staex.io/".parse::<Uri>().unwrap()
         );
     }
 

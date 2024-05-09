@@ -31,7 +31,7 @@ jobs:
       - name: Cargo deny warmup
         run: cijail ./ci/cargo-deny-warmup.sh
       - name: Cargo deny
-        run: cargo deny --offline check --disable-fetch
+        run: cargo deny check
       - name: Test
         run: ./ci/test.sh
       - name: Binaries
