@@ -22,6 +22,7 @@ use cijail::DnsPacket;
 use cijail::EndpointSet;
 use cijail::Error;
 use cijail::CIJAIL_ENDPOINTS;
+use cijail::CIJAIL_PROXY_PID;
 use libc::sockaddr;
 use libc::AT_FDCWD;
 use libseccomp::notify_id_valid;
@@ -443,12 +444,15 @@ struct ImmutableContext {
 
 impl ImmutableContext {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
+        let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(4);
         prohibited_files.insert(ProhibitedFile::new(
             format!("/proc/{}/mem", std::process::id()).as_str(),
         )?);
         prohibited_files.insert(ProhibitedFile::new(
             format!("/proc/{}/mem", parent_id()).as_str(),
+        )?);
+        prohibited_files.insert(ProhibitedFile::new(
+            format!("/proc/{}/mem", std::env::var(CIJAIL_PROXY_PID)?).as_str(),
         )?);
         if let Ok(file) = ProhibitedFile::new("/dev/mem") {
             prohibited_files.insert(file);

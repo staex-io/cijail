@@ -15,8 +15,19 @@ Our local Docker installation does not require this privilege,
 whereas Github Actions runners require.
 The capability is dropped before the command is executed.
 
+URL filtering is implemented using HTTP/HTTPS proxy that runs locally.
+We automatically set the usual `http_proxy` and `https_proxy` variables.
+This is enough for most applications.
+Please, create an issue if some applications do not work.
+
+HTTPS proxy creates root CA certificate that is used to sign every response sent to the client.
+Currently this CA certificate is automatically installed as trusted into the system store.
+Usually this is enough to make most of the applications recognize it as trusted.
+Please, create an issue if some applications do not work.
+
 
 # Usage
+
 
 ## Use manually
 
@@ -24,22 +35,30 @@ Cijail will print all IP addresses, ports nad domain names that it blocked
 as well as the corresponding system calls.
 The output looks like the following.
 ```
-$ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
-      cijail \
-      dig staex.io @1.1.1.1
+# DNS request (connection to DNS server is allowed whereas name resolution is not)
+🌊 env CIJAIL_ENDPOINTS='one.one.one.one:53' \
+    cijail \
+    dig staex.io @1.1.1.1
 [Sun Apr 04 17:28:22 2024] cijail: allow connect 1.1.1.1:53
 [Sun Apr 04 17:28:22 2024] cijail: deny sendmmsg staex.io
+
+# HTTPS request (specific URL is allowed)
+🌊 env CIJAIL_ENDPOINTS='https://api.github.com/repos/staex-io/cijail/releases' \
+    cijail \
+    curl https://api.github.com/repos/staex-io/cijail/releases
+[Thu May 09 07:20:45 2024] cijail-proxy: allow 200 https://api.github.com/repos/staex-io/cijail/releases
 ```
 
 - Use `CIJAIL_ENDPOINTS` to restrict which endpoints are allowed to be sent traffic to.
   These can be DNS names (i.e. allow only name resolution, but not the traffic),
-  DNS names plus port, IP address plus port.
+  DNS names plus port, IP address plus port, HTTP/HTTPS URL.
 - Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
   Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
   Dry run always fails.
 - Use `CIJAIL_ALLOW_LOOPBACK=1` to allow sending any traffic to any address and port
   in the loopback network
   (`127.0.0.1/8` and `::1`).
+
 
 ## Use in Github Actions
 

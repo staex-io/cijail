@@ -19,4 +19,5 @@ pub use self::uri::*;
 pub const CIJAIL_ENDPOINTS: &str = "CIJAIL_ENDPOINTS";
 pub const CIJAIL_DRY_RUN: &str = "CIJAIL_DRY_RUN";
 pub const CIJAIL_ROOT_CERT_PEM: &str = "CIJAIL_ROOT_CERT_PEM";
+pub const CIJAIL_PROXY_PID: &str = "CIJAIL_PROXY_PID";
 pub const SSL_CERT_FILE: &str = "SSL_CERT_FILE";

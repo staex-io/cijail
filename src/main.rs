@@ -18,6 +18,7 @@ use cijail::Logger;
 use cijail::ProxyConfig;
 use cijail::CIJAIL_DRY_RUN;
 use cijail::CIJAIL_ENDPOINTS;
+use cijail::CIJAIL_PROXY_PID;
 use clap::Parser;
 use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
@@ -127,6 +128,7 @@ fn spawn_tracer_process(
     allowed_endpoints: &EndpointSet,
     is_dry_run: bool,
     allow_loopback: bool,
+    proxy_pid: u32,
 ) -> Result<Child, Box<dyn std::error::Error>> {
     let arg0 = std::env::args_os()
         .next()
@@ -136,6 +138,7 @@ fn spawn_tracer_process(
     child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_base64()?);
     child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
     child.env(CIJAIL_ALLOW_LOOPBACK, bool_to_str(allow_loopback));
+    child.env(CIJAIL_PROXY_PID, proxy_pid.to_string());
     unsafe {
         let socket = socket.as_raw_fd();
         child.pre_exec(move || {
@@ -246,6 +249,7 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         &allowed_endpoints,
         is_dry_run || args.dry_run,
         allow_loopback || args.allow_loopback,
+        proxy.id(),
     )?;
     let status = tracee.wait()?;
     tracer.kill()?;
