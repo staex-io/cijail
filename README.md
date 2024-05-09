@@ -2,12 +2,12 @@
 
 Cijail is a CI/CD pipeline process jail that helps prevent supply chain attacks.
 Cijail filters outgoing network traffic in accordance with
+- allow list of HTTP/HTTPS URLs,
 - allow list of endpoints (specified by an IP address and a port) and
 - allow list of DNS names.
 
 **By default the outgoing traffic for all domain names, IP addresses and ports is blocked.**
 Cijail makes it impossible to exfiltrate the data over DNS and makes it difficult to do by other means.
-(The future versions will include HTTPS URL filter as well that would give even more granular control.)
 
 Cijail is implemented using [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) and
 sometimes needs [`CAP_SYS_PTRACE`](https://man7.org/linux/man-pages/man7/capabilities.7.html) capability to read memory of the processes being traced.
