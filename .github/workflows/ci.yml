@@ -19,8 +19,9 @@ jobs:
         https://pypi.org/simple/
         https://files.pythonhosted.org/packages/
         https://static.crates.io/crates/
-        https://uploads.github.com/repos/staex-io/cijail/releases/
         https://index.crates.io/
+        https://uploads.github.com/repos/staex-io/cijail/releases/
+        https://api.github.com/repos/staex-io/cijail/releases
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.4
