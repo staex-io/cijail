@@ -34,7 +34,7 @@ Please, create an issue if some applications do not work.
 Cijail will print all IP addresses, ports nad domain names that it blocked
 as well as the corresponding system calls.
 The output looks like the following.
-```
+```bash
 # DNS request (connection to DNS server is allowed whereas name resolution is not)
 🌊 env CIJAIL_ENDPOINTS='one.one.one.one:53' \
     cijail \
