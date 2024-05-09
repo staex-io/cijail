@@ -29,8 +29,8 @@ jobs:
         run: ./ci/dns.sh
       - name: Lint
         run: cijail ./ci/lint.sh
-      - name: Cargo deny warmup
-        run: cijail ./ci/cargo-deny-warmup.sh
+      - name: Cargo deny warm-up
+        run: cijail ./ci/cargo-deny-warm-up.sh
       - name: Cargo deny
         run: cargo deny check
       - name: Test

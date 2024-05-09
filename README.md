@@ -51,13 +51,22 @@ The output looks like the following.
 
 - Use `CIJAIL_ENDPOINTS` to restrict which endpoints are allowed to be sent traffic to.
   These can be DNS names (i.e. allow only name resolution, but not the traffic),
-  DNS names plus port, IP address plus port, HTTP/HTTPS URL, UNIX socket paths.
+  DNS names plus port, IP address plus port, HTTP/HTTPS URL, UNIX socket paths netlink sockets.
 - Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
   Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
   Dry run always fails.
 - Use `CIJAIL_ALLOW_LOOPBACK=1` to allow sending any traffic to any address and port
   in the loopback network
   (`127.0.0.1/8` and `::1`).
+
+Below are `CIJAIL_ENDPOINTS` examples.
+```bash
+https://github.com/    # allow HTTPS packets to/from github.com:443 with a URL starting with "https://github.com/"
+1.1.1.1:53             # allow TCP/UDP packets to/from 1.1.1.1:53
+one.one.one.one        # allow DNS packets that resolve `one.one.one.one` to IP addresses
+@/tmp/unix             # allow packets to/from abstract UNIX socket with path "\0/tmp/unix"
+/tmp/unix              # allow packets to/from named UNIX socket with path "/tmp/unix"
+```
 
 
 ## Use in Github Actions
