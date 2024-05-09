@@ -54,16 +54,13 @@ do_test_docker_image() {
 }
 
 push_docker_image() {
-    docker push "$tag":latest
     if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" = "tag"; then
+        docker push "$tag":latest
         docker push "$tag":"$cijail_version"
     fi
 }
 
 set -ex
-if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
-    exit 0
-fi
 trap cleanup EXIT
 workdir="$(mktemp -d)"
 root="$PWD"
