@@ -25,7 +25,6 @@ make_chroot() {
         ldd /usr/local/bin/$name
     done
     cijail --version
-    cijail -- cijail --version
     find /usr/local -type d -empty -delete
     find /usr/local
 }

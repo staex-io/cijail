@@ -49,7 +49,8 @@ EOF
 do_test_docker_image() {
     docker build --tag "$tag"-test:latest - <"$workdir"/Dockerfile
     docker run --rm "$tag"-test:latest /usr/local/bin/cijail --version
-    timeout --signal=KILL 30s docker run --rm "$tag"-test:latest /usr/local/bin/cijail true
+    timeout --signal=KILL 30s \
+        docker run --rm --cap-add CAP_SYS_PTRACE "$tag"-test:latest /usr/local/bin/cijail true
     docker rmi "$tag"-test:latest
 }
 
