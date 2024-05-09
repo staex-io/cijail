@@ -8,7 +8,9 @@ yanked = "deny"
 allow = [
     "Apache-2.0",
     "BSD-3-Clause",
+    "ISC",
     "MIT",
+    "OpenSSL",
     "Unicode-DFS-2016"
 ]
 
@@ -26,6 +28,7 @@ license-files = [
 multiple-versions = "warn"
 wildcards = "warn"
 highlight = "all"
+skip-tree = ["windows-sys"]
 
 [sources]
 unknown-registry = "deny"

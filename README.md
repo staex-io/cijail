@@ -15,25 +15,43 @@ Our local Docker installation does not require this privilege,
 whereas Github Actions runners require.
 The capability is dropped before the command is executed.
 
+URL filtering is implemented using HTTP/HTTPS proxy that runs locally.
+We automatically set the usual `http_proxy` and `https_proxy` variables.
+This is enough for most applications.
+Please, create an issue if some applications do not work.
+
+HTTPS proxy creates root CA certificate that is used to sign every response sent to the client.
+Currently this CA certificate is automatically installed as trusted into the system store.
+Usually this is enough to make most of the applications recognize it as trusted.
+Please, create an issue if some applications do not work.
+
 
 # Usage
+
 
 ## Use manually
 
 Cijail will print all IP addresses, ports nad domain names that it blocked
 as well as the corresponding system calls.
 The output looks like the following.
-```
-$ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
-      cijail \
-      dig staex.io @1.1.1.1
+```bash
+# DNS request (connection to DNS server is allowed whereas name resolution is not)
+🌊 env CIJAIL_ENDPOINTS='one.one.one.one:53' \
+    cijail \
+    dig staex.io @1.1.1.1
 [Sun Apr 04 17:28:22 2024] cijail: allow connect 1.1.1.1:53
 [Sun Apr 04 17:28:22 2024] cijail: deny sendmmsg staex.io
+
+# HTTPS request (specific URL is allowed)
+🌊 env CIJAIL_ENDPOINTS='https://api.github.com/repos/staex-io/cijail/releases' \
+    cijail \
+    curl https://api.github.com/repos/staex-io/cijail/releases
+[Thu May 09 07:20:45 2024] cijail-proxy: allow 200 https://api.github.com/repos/staex-io/cijail/releases
 ```
 
 - Use `CIJAIL_ENDPOINTS` to restrict which endpoints are allowed to be sent traffic to.
   These can be DNS names (i.e. allow only name resolution, but not the traffic),
-  DNS names plus port, IP address plus port.
+  DNS names plus port, IP address plus port, HTTP/HTTPS URL, UNIX socket paths netlink sockets.
 - Use `CIJAIL_DRY_RUN=1` to discover what is blocked by the current rules.
   Specifying `CIJAIL_DRY_RUN=0` is not mandatory.
   Dry run always fails.
@@ -41,20 +59,32 @@ $ env CIJAIL_ENDPOINTS='one.one.one.one:53' \
   in the loopback network
   (`127.0.0.1/8` and `::1`).
 
+Below are `CIJAIL_ENDPOINTS` examples.
+```bash
+https://github.com/    # allow HTTPS packets to/from github.com:443 with a URL starting with "https://github.com/"
+1.1.1.1:53             # allow TCP/UDP packets to/from 1.1.1.1:53
+one.one.one.one        # allow DNS packets that resolve `one.one.one.one` to IP addresses
+@/tmp/unix             # allow packets to/from abstract UNIX socket with path "\0/tmp/unix"
+/tmp/unix              # allow packets to/from named UNIX socket with path "/tmp/unix"
+```
+
+
 ## Use in Github Actions
 
 Add the following lines to your `Dockerfile`.
 
 ```dockerfile
-RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.4.2 \
-    && curl \
-    --silent \
-    --fail \
-    --location \
-    --output /usr/local/bin/cijail \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version \
-    && chmod +x /usr/local/bin/cijail
+RUN cijail_version=0.6.0 glibc_version=glibc-2.31\
+    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz \
+    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz \
+    && curl -fL -o /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    && cd /tmp \
+    && sha256sum -c /tmp/cijail-$glibc_version.tar.gz-sha256sum.txt \
+    && cd - \
+    && tar -C /usr/local -xf /tmp/cijail-$glibc_version.tar.gz \
+    && rm /tmp/cijail-$glibc_version.tar.gz* \
+    && cijail --version
 
 ENTRYPOINT ["/usr/local/bin/cijail"]
 ```
@@ -112,5 +142,4 @@ To do that add the following lines to `/etc/gitlab-runner/config.toml`.
 - You can not run `cijail` inside another `cijail`. We are investigating the issue.
 - Cijail **must be** the first process that you run in the Docker container
   because it controls only its descendants.
-  Usually this is not a problem in CI/CD,
-  but on the local computer something like [NSCD](https://man7.org/linux/man-pages/man8/nscd.8.html) can easily circumvent the jail.
+  Usually this is not a problem in CI/CD.

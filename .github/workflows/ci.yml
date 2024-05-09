@@ -5,7 +5,7 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/staex-io/cijail-ci:latest@sha256:bd09ad559901af351884711b87263d795c0a612e9577be8644023af81e720bfe
+      image: ghcr.io/staex-io/cijail-ci:latest@sha256:2db69bd7e43b933743a18f99da4c9dc0b3329a3771b4bc64c37c683e01015809
       credentials:
         username: token
         password: ${{ secrets.GHCR_TOKEN }}
@@ -14,13 +14,14 @@ jobs:
       RUST_BACKTRACE: 1
       RUST_TEST_THREADS: 1
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      CIJAIL_ENDPOINTS: 9.9.9.9:53 github.com:443 index.crates.io:443 static.crates.io:443
-        pypi.org:443 files.pythonhosted.org:443 lb-140-82-112-4-iad.github.com:443
-        lb-140-82-113-3-iad.github.com:443 lb-140-82-114-4-iad.github.com:443 lb-140-82-116-4-sea.github.com:443
-        151.101.44.223:443 lb-140-82-113-4-iad.github.com:443 api.github.com:443 uploads.github.com:443
-        lb-140-82-116-14-sea.github.com:443 lb-140-82-112-13-iad.github.com:443 lb-140-82-114-3-iad.github.com:443
-        lb-140-82-116-3-sea.github.com:443 lb-140-82-112-3-iad.github.com:443 151.101.130.137:443
-        151.101.2.137:443 151.101.66.137:443 151.101.194.137:443
+      CIJAIL_ENDPOINTS: |
+        https://github.com/lyz-code/yamlfix/
+        https://pypi.org/simple/
+        https://files.pythonhosted.org/packages/
+        https://static.crates.io/crates/
+        https://index.crates.io/
+        https://uploads.github.com/repos/staex-io/cijail/releases/
+        https://api.github.com/repos/staex-io/cijail/releases
     steps:
       - name: Checkout
         uses: actions/checkout@v4.1.4
@@ -28,9 +29,15 @@ jobs:
         run: ./ci/dns.sh
       - name: Lint
         run: cijail ./ci/lint.sh
+      - name: Cargo deny warm-up
+        run: cijail ./ci/cargo-deny-warm-up.sh
+      - name: Cargo deny
+        run: cargo deny check
       - name: Test
         run: ./ci/test.sh
-      - name: Build
+      - name: Binaries
         run: cijail ./ci/binaries.sh
+      - name: Packages
+        run: cijail ./ci/packages.sh
       - name: Release
-        run: ./ci/release.sh
+        run: cijail ./ci/release.sh

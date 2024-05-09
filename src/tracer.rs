@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io::ErrorKind;
 use std::io::IoSliceMut;
 use std::mem::size_of;
-use std::net::SocketAddr;
 use std::os::fd::RawFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::FileExt;
@@ -17,10 +16,13 @@ use std::process::ExitCode;
 use std::slice::from_raw_parts;
 use std::str::from_utf8;
 
+use cijail::AnySocketAddr;
 use cijail::DnsName;
 use cijail::DnsPacket;
+use cijail::EndpointSet;
 use cijail::Error;
-use libc::sockaddr;
+use cijail::CIJAIL_ENDPOINTS;
+use cijail::CIJAIL_PROXY_PID;
 use libc::AT_FDCWD;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
@@ -34,11 +36,8 @@ use nix::sys::stat::FileStat;
 use nix::sys::uio::process_vm_readv;
 use nix::sys::uio::RemoteIoVec;
 use nix::unistd::Pid;
-use os_socketaddr::OsSocketAddr;
 
 use crate::socket;
-use crate::EndpointSet;
-use crate::CIJAIL_ENDPOINTS;
 
 pub(crate) fn main(
     notify_fd: RawFd,
@@ -63,10 +62,10 @@ pub(crate) fn main(
         context.validate()?;
         let syscall = context.handle_syscall()?;
         if allow_loopback {
-            context
-                .mutable
-                .sockaddrs
-                .retain(|sockaddr| !sockaddr.ip().is_loopback());
+            context.mutable.sockaddrs.retain(|sockaddr| match sockaddr {
+                AnySocketAddr::Ip(x) => !x.ip().is_loopback(),
+                _ => true,
+            });
         }
         let response = if context.mutable.is_continue(&allowed_endpoints) {
             ScmpNotifResp::new_continue(context.request.id, ScmpNotifRespFlags::empty())
@@ -90,9 +89,18 @@ pub(crate) fn main(
             )?;
             write!(&mut buf, " {}", syscall)?;
             for addr in mutable_context.sockaddrs.iter() {
-                match allowed_endpoints.resolve_socketaddr(addr) {
-                    Some(dns_name) => write!(&mut buf, " {}:{}", dns_name, addr.port())?,
-                    None => write!(&mut buf, " {}", addr)?,
+                match addr {
+                    AnySocketAddr::Ip(addr) => {
+                        let dns_names = allowed_endpoints.resolve_socketaddr(addr);
+                        if !dns_names.is_empty() {
+                            write!(&mut buf, " {}:{}", dns_names[0], addr.port())?;
+                        } else {
+                            write!(&mut buf, " {}", addr)?;
+                        }
+                    }
+                    _ => {
+                        write!(&mut buf, " {}", addr)?;
+                    }
                 }
             }
             for name in mutable_context.dns_names.iter() {
@@ -184,6 +192,12 @@ impl Context<'_> {
                         self.request.data.args[1] as usize,
                         self.request.data.args[2] as usize,
                     )?;
+                    /*
+                    self.read_tls_packet(
+                        self.request.data.args[1] as usize,
+                        self.request.data.args[2] as usize,
+                    )?;
+                    */
                 }
             }
             "open" => {
@@ -258,10 +272,7 @@ impl Context<'_> {
         let mut buf = vec![0_u8; len as usize];
         self.read_memory(base, len as usize, &mut buf)?;
         self.validate()?;
-        let sockaddr = unsafe {
-            OsSocketAddr::copy_from_raw(buf.as_mut_slice().as_ptr() as *const sockaddr, len)
-        }
-        .into_addr();
+        let sockaddr = AnySocketAddr::new(buf.as_mut_slice(), len);
         self.mutable.sockaddrs.extend(sockaddr);
         Ok(())
     }
@@ -379,7 +390,7 @@ impl Context<'_> {
 struct MutableContext {
     dns_names: Vec<DnsName>,
     denied_paths: Vec<PathBuf>,
-    sockaddrs: Vec<SocketAddr>,
+    sockaddrs: Vec<AnySocketAddr>,
     memory_files: HashMap<Pid, File>,
 }
 
@@ -431,12 +442,15 @@ struct ImmutableContext {
 
 impl ImmutableContext {
     fn new() -> Result<Self, Box<dyn std::error::Error>> {
-        let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(3);
+        let mut prohibited_files: HashSet<ProhibitedFile> = HashSet::with_capacity(4);
         prohibited_files.insert(ProhibitedFile::new(
             format!("/proc/{}/mem", std::process::id()).as_str(),
         )?);
         prohibited_files.insert(ProhibitedFile::new(
             format!("/proc/{}/mem", parent_id()).as_str(),
+        )?);
+        prohibited_files.insert(ProhibitedFile::new(
+            format!("/proc/{}/mem", std::env::var(CIJAIL_PROXY_PID)?).as_str(),
         )?);
         if let Ok(file) = ProhibitedFile::new("/dev/mem") {
             prohibited_files.insert(file);

@@ -1,6 +1,7 @@
 use std::fmt::Display;
 use std::io::ErrorKind;
 
+use http::uri::InvalidUriParts;
 use libseccomp::error::SeccompError;
 use thiserror::Error;
 
@@ -22,6 +23,16 @@ pub enum Error {
     Base64Decode(base64::DecodeError),
     #[error("regex error: {0}")]
     Regex(#[from] regex::Error),
+    #[error("http error: {0}")]
+    Hyper(#[from] hyper::Error),
+    #[error("fmt error: {0}")]
+    Fmt(#[from] std::fmt::Error),
+    #[error("uri error: {0}")]
+    Uri(#[from] InvalidUriParts),
+    #[error("rcgen error: {0}")]
+    Rcgen(#[from] rcgen::Error),
+    #[error("denied")]
+    Deny,
 }
 
 impl Error {

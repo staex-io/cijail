@@ -15,4 +15,7 @@ env RUSTFLAGS="$rust_flags" \
     --release \
     --target "$target" \
     --no-default-features
-mv target/"$target"/release/cijail cijail-"$glibc_version"
+for name in cijail cijail-proxy; do
+    mkdir -p binaries/"$glibc_version"
+    mv target/"$target"/release/$name binaries/"$glibc_version"
+done

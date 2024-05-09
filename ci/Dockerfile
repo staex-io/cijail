@@ -37,16 +37,9 @@ RUN cargo install --quiet cargo-deny
 RUN curl --location --silent --fail --output /usr/bin/shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 && \
     chmod +x /usr/bin/shfmt
 
-RUN glibc_version="$(getconf GNU_LIBC_VERSION | sed 's/ /-/g')" \
-    cijail_version=0.5.0 \
-    && curl \
-    --silent \
-    --fail \
-    --location \
-    --output /usr/local/bin/cijail \
-    https://github.com/staex-io/cijail/releases/download/$cijail_version/cijail-glibc-2.31 \
-    && echo '5b1da12d24c8bb3aa35aa5402225a4133a2235dea047c703f118126ffa9badd0 /usr/local/bin/cijail' | sha256sum --check \
-    && chmod +x /usr/local/bin/cijail
+COPY cijail-glibc-2.31.tar.gz /tmp/cijail-glibc-2.31.tar.gz
+
+RUN tar -C /usr/local -xvf /tmp/cijail-glibc-2.31.tar.gz
 
 LABEL org.opencontainers.image.source=https://github.com/staex-io/cijail
 LABEL org.opencontainers.image.description="CI image"
