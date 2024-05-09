@@ -1,8 +1,9 @@
 #!/bin/sh
 set -ex
-if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
-    exit 0
-fi
+# TODO
+#if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
+#    exit 0
+#fi
 curl -sL \
     -X POST \
     -H "Accept: application/vnd.github+json" \
@@ -22,14 +23,16 @@ curl -sL \
 }'
 cat /tmp/response
 release_id="$(jq -r .id /tmp/response)"
-for file in cijail-glibc-*; do
-    name="$(basename "$file")"
-    curl -sL \
-        -X POST \
-        -H "Accept: application/vnd.github+json" \
-        -H "Authorization: Bearer $GITHUB_TOKEN" \
-        -H "X-GitHub-Api-Version: 2022-11-28" \
-        -H "Content-Type: application/octet-stream" \
-        "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
-        --data-binary "@$file"
+for dir in packages/*; do
+    for file in "$dir"/*; do
+        name="$(basename "$file")"
+        curl -sL \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "Content-Type: application/octet-stream" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
+            --data-binary "@$file"
+    done
 done

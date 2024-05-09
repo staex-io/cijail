@@ -1,9 +1,10 @@
 #!/bin/sh
 
 set -ex
-if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
-    exit 0
-fi
+# TODO
+#if test "$GITHUB_ACTIONS" = "true" && test "$GITHUB_REF_TYPE" != "tag"; then
+#    exit 0
+#fi
 rust_flags="-Ccodegen-units=1 -Cstrip=symbols -Copt-level=3 -Cincremental=false -Clto=yes -Cembed-bitcode=yes"
 target=x86_64-unknown-linux-gnu
 export LIBSECCOMP_LINK_TYPE=static
@@ -15,4 +16,7 @@ env RUSTFLAGS="$rust_flags" \
     --release \
     --target "$target" \
     --no-default-features
-mv target/"$target"/release/cijail cijail-"$glibc_version"
+for name in cijail cijail-proxy; do
+    mkdir -p binaries/"$glibc_version"
+    mv target/"$target"/release/$name binaries/"$glibc_version"
+done
