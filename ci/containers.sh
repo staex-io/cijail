@@ -7,15 +7,10 @@ cleanup() {
 
 build_docker_image() {
     mkdir "$workdir"/tar
-    tar -C "$workdir"/tar -xf "$root"/packages/cijail-glibc-2.31/cijail-glibc-2.31.tar.gz
-    cp "$root"/ci/docker.sh "$workdir"
+    tar -C "$workdir"/tar -xf "$root"/packages/cijail.tar.gz
     cat >"$workdir"/Dockerfile <<EOF
-FROM debian:bullseye AS builder
-COPY tar /usr/local
-COPY docker.sh /tmp/docker.sh
-RUN /tmp/docker.sh
 FROM scratch
-COPY --from=builder /usr/local /
+COPY tar /
 LABEL org.opencontainers.image.source=https://github.com/staex-io/cijail
 LABEL org.opencontainers.image.description="Cijail image"
 LABEL org.opencontainers.image.version=$cijail_version

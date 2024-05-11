@@ -1,6 +1,13 @@
-FROM rust:1.76.0-bullseye
+FROM alpine:latest AS alpine
+
+RUN apk add linux-headers
+
+FROM rust:1.76.0
 # NB: We need debian stable to have the oldest possible glibc
 # otherwise cijail may not work on old distributions.
+
+# Get proper linux headers for libseccomp.
+COPY --from=alpine /usr/include /usr/include/alpine
 
 RUN apt-get -qq update \
     && apt-get -qq install --no-install-recommends \
@@ -15,9 +22,11 @@ RUN apt-get -qq update \
     dnsutils \
     bind9-utils \
     docker.io \
+    musl-tools \
+    gperf \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --quiet --no-cache-dir --no-input lcov_cobertura==2.0.*
+RUN pip3 install --quiet --no-cache-dir --no-input --break-system-packages lcov_cobertura==2.0.*
 
 ENV CARGO_HOME=/usr/local/cargo \
     RUSTUP_HOME=/usr/local/rustup \
@@ -38,9 +47,11 @@ RUN cargo install --quiet cargo-deny
 RUN curl --location --silent --fail --output /usr/bin/shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 && \
     chmod +x /usr/bin/shfmt
 
-COPY cijail-glibc-2.31.tar.gz /tmp/cijail-glibc-2.31.tar.gz
+COPY build-dependencies.sh /tmp/build-dependencies.sh
+RUN /tmp/build-dependencies.sh
 
-RUN tar -C /usr/local -xvf /tmp/cijail-glibc-2.31.tar.gz
+COPY cijail.tar.gz /tmp/cijail.tar.gz
+RUN tar -C /usr/local -xvf /tmp/cijail.tar.gz
 
 LABEL org.opencontainers.image.source=https://github.com/staex-io/cijail
 LABEL org.opencontainers.image.description="CI image"

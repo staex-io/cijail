@@ -118,7 +118,14 @@ fn spawn_tracee_process(
             .chain(args.iter().map(|x| x.to_string_lossy()))
             .collect::<Vec<_>>()
             .join(" ");
-        format!("failed to run `{}`: {}", args, e)
+        if e.kind() == ErrorKind::InvalidInput {
+            format!(
+                "failed to run `{}`: your kernel version is likely too old: must be at least 5.0.0 to support SECCOMP_FILTER_FLAG_NEW_LISTENER",
+                args
+            )
+        } else {
+            format!("failed to run `{}`: {}", args, e)
+        }
     })?;
     Ok(child)
 }
@@ -164,7 +171,8 @@ fn spawn_proxy_process(
     let arg0 = std::env::args_os()
         .next()
         .ok_or_else(|| Error::map("can not find zeroth argument"))?;
-    let mut child = Command::new(format!("{}-proxy", arg0.to_string_lossy()));
+    let arg0 = format!("{}-proxy", arg0.to_string_lossy());
+    let mut child = Command::new(arg0.clone());
     child.env(CIJAIL_ENDPOINTS, allowed_endpoints.to_base64()?);
     child.env(CIJAIL_DRY_RUN, bool_to_str(is_dry_run));
     child.env(CIJAIL_ALLOW_LOOPBACK, bool_to_str(allow_loopback));
@@ -179,7 +187,7 @@ fn spawn_proxy_process(
     };
     let child = child
         .spawn()
-        .map_err(move |e| format!("failed to run `{}`: {}", arg0.to_string_lossy(), e))?;
+        .map_err(move |e| format!("failed to run `{}`: {}", arg0, e))?;
     let config = ProxyConfig::read(&mut sockets.1)?;
     Ok((child, config))
 }
