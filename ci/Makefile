@@ -2,5 +2,6 @@ CI := ghcr.io/staex-io/cijail-ci:latest
 
 .PHONY: ci
 ci:
-	docker build --tag $(CI) -f Dockerfile ../packages/cijail-glibc-2.31
+	@cp build-dependencies.sh ../packages/
+	docker build --tag $(CI) -f Dockerfile ../packages
 	docker push $(CI)

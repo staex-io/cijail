@@ -7,15 +7,10 @@ cleanup() {
 
 build_docker_image() {
     mkdir "$workdir"/tar
-    tar -C "$workdir"/tar -xf "$root"/packages/cijail-glibc-2.31/cijail-glibc-2.31.tar.gz
-    cp "$root"/ci/docker.sh "$workdir"
+    tar -C "$workdir"/tar -xf "$root"/packages/cijail.tar.gz
     cat >"$workdir"/Dockerfile <<EOF
-FROM debian:bullseye AS builder
-COPY tar /usr/local
-COPY docker.sh /tmp/docker.sh
-RUN /tmp/docker.sh
 FROM scratch
-COPY --from=builder /usr/local /
+COPY tar /
 LABEL org.opencontainers.image.source=https://github.com/staex-io/cijail
 LABEL org.opencontainers.image.description="Cijail image"
 LABEL org.opencontainers.image.version=$cijail_version
@@ -48,13 +43,13 @@ EOF
 
 do_test_docker_image() {
     docker build --tag "$tag"-test:latest - <"$workdir"/Dockerfile
-    # test whether patchelf worked for cijail
+    # test cijail
     docker run --rm "$tag"-test:latest /usr/local/bin/cijail --version
-    # test whether patchelf worked for cijail-proxy
+    # test cijail-proxy
     timeout --signal=KILL 30s \
         docker run --rm --cap-add CAP_SYS_PTRACE "$tag"-test:latest /usr/local/bin/cijail true
-    # test DNS name resolution via NSS libraries
-    docker run --rm "$tag"-test:latest \
+    # test DNS name resolution
+    docker run --rm --cap-add CAP_SYS_PTRACE "$tag"-test:latest \
         env CIJAIL_ENDPOINTS=https://github.com /usr/local/bin/cijail true
     docker rmi "$tag"-test:latest
 }
