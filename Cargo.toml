@@ -1,6 +1,6 @@
 [package]
 name = "cijail"
-version = "0.6.4"
+version = "0.6.5"
 edition = "2021"
 publish = false
 
@@ -21,6 +21,7 @@ passfd = { version = "0.1.6", features = [], default-features = false }
 punycode = { version = "0.4.1", features = [], default-features = false }
 rcgen = { version = "0.13.1", features = [], default-features = true }
 regex = { version = "1.10.4", features = [], default-features = true }
+rlimit = { version = "0.10.1", features = [], default-features = false }
 socketpair = { version = "0.19.5", features = [], default-features = false }
 tempfile = { version = "3.10.1", features = [], default-features = false }
 thiserror = { version = "1.0.58", features = [], default-features = false }
