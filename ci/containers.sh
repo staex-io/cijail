@@ -43,13 +43,13 @@ EOF
 
 do_test_docker_image() {
     docker build --tag "$tag"-test:latest - <"$workdir"/Dockerfile
-    # test whether patchelf worked for cijail
+    # test cijail
     docker run --rm "$tag"-test:latest /usr/local/bin/cijail --version
-    # test whether patchelf worked for cijail-proxy
+    # test cijail-proxy
     timeout --signal=KILL 30s \
         docker run --rm --cap-add CAP_SYS_PTRACE "$tag"-test:latest /usr/local/bin/cijail true
-    # test DNS name resolution via NSS libraries
-    docker run --rm "$tag"-test:latest \
+    # test DNS name resolution
+    docker run --rm --cap-add CAP_SYS_PTRACE "$tag"-test:latest \
         env CIJAIL_ENDPOINTS=https://github.com /usr/local/bin/cijail true
     docker rmi "$tag"-test:latest
 }
