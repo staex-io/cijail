@@ -27,7 +27,10 @@ use cijail::SSL_CERT_FILE;
 use http_mitm_proxy::futures::StreamExt;
 use http_mitm_proxy::MitmProxy;
 use hyper::Request;
+use log::error;
 use log::info;
+use rlimit::increase_nofile_limit;
+use rlimit::Resource;
 use socketpair::SocketpairStream;
 use tempfile::NamedTempFile;
 use tokio_native_tls::native_tls::TlsConnector;
@@ -35,6 +38,11 @@ use tokio_native_tls::native_tls::TlsConnector;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Logger::init("cijail-proxy").map_err(|_| "failed to set logger")?;
+    if let Ok(max_nofile) = Resource::NOFILE.get_hard() {
+        if let Err(e) = increase_nofile_limit(max_nofile) {
+            error!("failed to increase NOFILE limit to {}: {}", max_nofile, e);
+        }
+    }
     let is_dry_run = env_to_bool(CIJAIL_DRY_RUN)?;
     let allowed_endpoints: EndpointSet = match std::env::var(CIJAIL_ENDPOINTS) {
         Ok(string) => EndpointSet::from_base64(string.as_str())?,
