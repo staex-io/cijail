@@ -20,7 +20,6 @@ use cijail::AnySocketAddr;
 use cijail::DnsName;
 use cijail::DnsPacket;
 use cijail::EndpointSet;
-use cijail::Error;
 use cijail::CIJAIL_ENDPOINTS;
 use cijail::CIJAIL_PROXY_PID;
 use libc::AT_FDCWD;
@@ -176,12 +175,11 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    fn validate(&self) -> Result<(), std::io::Error> {
+    fn validate(&self) -> Result<(), SeccompError> {
         notify_id_valid(self.notify_fd, self.request.id)
-            .map_err(|e| std::io::Error::new(ErrorKind::Other, e.to_string()))
     }
 
-    fn handle_syscall(&mut self) -> Result<String, std::io::Error> {
+    fn handle_syscall(&mut self) -> Result<String, LoopError> {
         let syscall = self
             .request
             .data
@@ -257,7 +255,7 @@ impl Context<'_> {
         Ok(syscall)
     }
 
-    fn read_bytes(&mut self, base: usize, len: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn read_bytes(&mut self, base: usize, len: usize) -> Result<Vec<u8>, LoopError> {
         let mut buf = vec![0_u8; len];
         self.read_memory(base, len, &mut buf)?;
         Ok(buf)
@@ -267,7 +265,7 @@ impl Context<'_> {
         &mut self,
         base: usize,
         len: usize,
-    ) -> Result<(&'a [T], Vec<u8>), std::io::Error> {
+    ) -> Result<(&'a [T], Vec<u8>), LoopError> {
         if base == 0 || len == 0 {
             return Ok((&[], Vec::new()));
         }
@@ -279,7 +277,7 @@ impl Context<'_> {
         Ok((messages, buf))
     }
 
-    fn read_dns_packet(&mut self, base: usize, len: usize) -> Result<(), std::io::Error> {
+    fn read_dns_packet(&mut self, base: usize, len: usize) -> Result<(), LoopError> {
         let bytes = self.read_bytes(base, len)?;
         let bytes = &bytes[..bytes.len().min(MAX_DNS_PACKET_SIZE)];
         if let Ok((packet, _)) = DnsPacket::read_questions_only(bytes) {
@@ -294,7 +292,7 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn read_socket_addr(&mut self, base: usize, len: u32) -> Result<(), std::io::Error> {
+    fn read_socket_addr(&mut self, base: usize, len: u32) -> Result<(), LoopError> {
         if base == 0 {
             return Ok(());
         }
@@ -306,7 +304,7 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn read_msghdr(&mut self, base: usize) -> Result<(), std::io::Error> {
+    fn read_msghdr(&mut self, base: usize) -> Result<(), LoopError> {
         if base == 0 {
             return Ok(());
         }
@@ -326,7 +324,7 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn read_mmsghdr(&mut self, base: usize, len: usize) -> Result<(), std::io::Error> {
+    fn read_mmsghdr(&mut self, base: usize, len: usize) -> Result<(), LoopError> {
         let (messages, _storage) = self.read_array::<socket::mmsghdr>(base, len)?;
         for message in messages {
             let base = message.msg_hdr.msg_name as usize;
@@ -343,17 +341,13 @@ impl Context<'_> {
         Ok(())
     }
 
-    fn read_path(&mut self, base: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn read_path(&mut self, base: usize) -> Result<Vec<u8>, LoopError> {
         let mut path = self.read_bytes(base, libc::PATH_MAX as usize)?;
-        path.truncate(
-            path.iter()
-                .position(|x| *x == 0_u8)
-                .ok_or_else(|| Error::map("invalid path"))?,
-        );
+        path.truncate(path.iter().position(|x| *x == 0_u8).ok_or("invalid path")?);
         Ok(path)
     }
 
-    fn check_path(&mut self, path: &[u8]) -> Result<(), std::io::Error> {
+    fn check_path(&mut self, path: &[u8]) -> Result<(), LoopError> {
         let file_status = stat(path);
         self.validate()?;
         match file_status {
@@ -380,12 +374,7 @@ impl Context<'_> {
         }
     }
 
-    fn read_memory(
-        &mut self,
-        base: usize,
-        len: usize,
-        buf: &mut [u8],
-    ) -> Result<(), std::io::Error> {
+    fn read_memory(&mut self, base: usize, len: usize, buf: &mut [u8]) -> Result<(), LoopError> {
         let pid = Pid::from_raw(self.request.pid as i32);
         match process_vm_readv(
             pid,
@@ -406,13 +395,11 @@ impl Context<'_> {
                 file.read_at(&mut buf[..len], base as u64)?;
             }
             Err(e) => {
-                return Err(std::io::Error::new(
-                    ErrorKind::Other,
-                    format!("failed to read tracee process memory: {}", e),
-                ));
+                return Err(format!("failed to read tracee process memory: {}", e).into());
             }
         }
-        self.validate()
+        self.validate()?;
+        Ok(())
     }
 }
 
@@ -505,9 +492,21 @@ impl From<std::io::Error> for LoopError {
     }
 }
 
-impl From<Box<dyn std::error::Error>> for LoopError {
-    fn from(other: Box<dyn std::error::Error>) -> Self {
-        Self::Break(other)
+impl From<Errno> for LoopError {
+    fn from(other: Errno) -> Self {
+        Self::Break(other.into())
+    }
+}
+
+impl From<&str> for LoopError {
+    fn from(other: &str) -> Self {
+        Self::Break(other.into())
+    }
+}
+
+impl From<String> for LoopError {
+    fn from(other: String) -> Self {
+        Self::Break(other.into())
     }
 }
 
