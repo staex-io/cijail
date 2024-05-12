@@ -24,10 +24,12 @@ use cijail::Error;
 use cijail::CIJAIL_ENDPOINTS;
 use cijail::CIJAIL_PROXY_PID;
 use libc::AT_FDCWD;
+use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
 use libseccomp::ScmpNotifResp;
 use libseccomp::ScmpNotifRespFlags;
+use log::error;
 use log::info;
 use nix::errno::Errno;
 use nix::fcntl::readlink;
@@ -51,73 +53,100 @@ pub(crate) fn main(
     let immutable_context = ImmutableContext::new()?;
     let mut mutable_context = MutableContext::new();
     loop {
-        mutable_context.clear();
-        let request = ScmpNotifReq::receive(notify_fd)?;
-        let mut context = Context {
+        match main_loop(
             notify_fd,
-            request,
-            mutable: &mut mutable_context,
-            immutable: &immutable_context,
-        };
-        context.validate()?;
-        let syscall = context.handle_syscall()?;
-        if allow_loopback {
-            context.mutable.sockaddrs.retain(|sockaddr| match sockaddr {
-                AnySocketAddr::Ip(x) => !x.ip().is_loopback(),
-                _ => true,
-            });
-        }
-        let response = if context.mutable.is_continue(&allowed_endpoints) {
-            ScmpNotifResp::new_continue(context.request.id, ScmpNotifRespFlags::empty())
-        } else {
-            let error = if !context.mutable.denied_paths.is_empty() {
-                libc::ENOMEDIUM
-            } else {
-                libc::ENETUNREACH
-            };
-            ScmpNotifResp::new_error(context.request.id, -error, ScmpNotifRespFlags::empty())
-        };
-        if !mutable_context.is_empty() {
-            let mut buf = String::with_capacity(4096);
-            if is_dry_run {
-                write!(&mut buf, "DRYRUN ")?;
+            is_dry_run,
+            allow_loopback,
+            &allowed_endpoints,
+            &immutable_context,
+            &mut mutable_context,
+        ) {
+            Err(LoopError::Continue(e)) => {
+                error!("continue after seccomp error: {}", e);
             }
-            write!(
-                &mut buf,
-                "{}",
-                if response.error == 0 { "allow" } else { "deny" }
-            )?;
-            write!(&mut buf, " {}", syscall)?;
-            for addr in mutable_context.sockaddrs.iter() {
-                match addr {
-                    AnySocketAddr::Ip(addr) => {
-                        let dns_names = allowed_endpoints.resolve_socketaddr(addr);
-                        if !dns_names.is_empty() {
-                            write!(&mut buf, " {}:{}", dns_names[0], addr.port())?;
-                        } else {
-                            write!(&mut buf, " {}", addr)?;
-                        }
-                    }
-                    _ => {
+            Err(LoopError::Break(e)) => {
+                return Err(e);
+            }
+            Ok(_) => {}
+        }
+    }
+}
+
+fn main_loop(
+    notify_fd: RawFd,
+    is_dry_run: bool,
+    allow_loopback: bool,
+    allowed_endpoints: &EndpointSet,
+    immutable_context: &ImmutableContext,
+    mutable_context: &mut MutableContext,
+) -> Result<(), LoopError> {
+    mutable_context.clear();
+    let request = ScmpNotifReq::receive(notify_fd)?;
+    let mut context = Context {
+        notify_fd,
+        request,
+        mutable: mutable_context,
+        immutable: immutable_context,
+    };
+    context.validate()?;
+    let syscall = context.handle_syscall()?;
+    if allow_loopback {
+        context.mutable.sockaddrs.retain(|sockaddr| match sockaddr {
+            AnySocketAddr::Ip(x) => !x.ip().is_loopback(),
+            _ => true,
+        });
+    }
+    let response = if context.mutable.is_continue(allowed_endpoints) {
+        ScmpNotifResp::new_continue(context.request.id, ScmpNotifRespFlags::empty())
+    } else {
+        let error = if !context.mutable.denied_paths.is_empty() {
+            libc::ENOMEDIUM
+        } else {
+            libc::ENETUNREACH
+        };
+        ScmpNotifResp::new_error(context.request.id, -error, ScmpNotifRespFlags::empty())
+    };
+    if !mutable_context.is_empty() {
+        let mut buf = String::with_capacity(4096);
+        if is_dry_run {
+            write!(&mut buf, "DRYRUN ")?;
+        }
+        write!(
+            &mut buf,
+            "{}",
+            if response.error == 0 { "allow" } else { "deny" }
+        )?;
+        write!(&mut buf, " {}", syscall)?;
+        for addr in mutable_context.sockaddrs.iter() {
+            match addr {
+                AnySocketAddr::Ip(addr) => {
+                    let dns_names = allowed_endpoints.resolve_socketaddr(addr);
+                    if !dns_names.is_empty() {
+                        write!(&mut buf, " {}:{}", dns_names[0], addr.port())?;
+                    } else {
                         write!(&mut buf, " {}", addr)?;
                     }
                 }
+                _ => {
+                    write!(&mut buf, " {}", addr)?;
+                }
             }
-            for name in mutable_context.dns_names.iter() {
-                write!(&mut buf, " {}", name)?;
-            }
-            for path in mutable_context.denied_paths.iter() {
-                write!(&mut buf, " {}", path.display())?;
-            }
-            info!("{}", buf);
         }
-        if is_dry_run {
-            ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
-                .respond(notify_fd)?;
-        } else {
-            response.respond(notify_fd)?;
+        for name in mutable_context.dns_names.iter() {
+            write!(&mut buf, " {}", name)?;
         }
+        for path in mutable_context.denied_paths.iter() {
+            write!(&mut buf, " {}", path.display())?;
+        }
+        info!("{}", buf);
     }
+    let response = if is_dry_run {
+        ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty())
+    } else {
+        response
+    };
+    response.respond(notify_fd)?;
+    Ok(())
 }
 
 #[derive(PartialEq, Eq, Hash)]
@@ -456,6 +485,35 @@ impl ImmutableContext {
             prohibited_files.insert(file);
         }
         Ok(Self { prohibited_files })
+    }
+}
+
+enum LoopError {
+    Break(Box<dyn std::error::Error>),
+    Continue(SeccompError),
+}
+
+impl From<std::fmt::Error> for LoopError {
+    fn from(other: std::fmt::Error) -> Self {
+        Self::Break(other.into())
+    }
+}
+
+impl From<std::io::Error> for LoopError {
+    fn from(other: std::io::Error) -> Self {
+        Self::Break(other.into())
+    }
+}
+
+impl From<Box<dyn std::error::Error>> for LoopError {
+    fn from(other: Box<dyn std::error::Error>) -> Self {
+        Self::Break(other)
+    }
+}
+
+impl From<SeccompError> for LoopError {
+    fn from(other: SeccompError) -> Self {
+        Self::Continue(other)
     }
 }
 
