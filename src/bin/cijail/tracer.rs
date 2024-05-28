@@ -23,6 +23,7 @@ use cijail::EndpointSet;
 use cijail::CIJAIL_ENDPOINTS;
 use cijail::CIJAIL_PROXY_PID;
 use libc::AT_FDCWD;
+use libseccomp::error::SeccompErrno;
 use libseccomp::error::SeccompError;
 use libseccomp::notify_id_valid;
 use libseccomp::ScmpNotifReq;
@@ -61,7 +62,12 @@ pub(crate) fn main(
             &mut mutable_context,
         ) {
             Err(LoopError::Continue(e)) => {
-                error!("continue after seccomp error: {}", e);
+                if !matches!(
+                    e.errno(),
+                    Some(SeccompErrno::ECANCELED) | Some(SeccompErrno::ENOENT)
+                ) {
+                    error!("continue after seccomp error: {}", e);
+                }
             }
             Err(LoopError::Break(e)) => {
                 return Err(e);
