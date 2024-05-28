@@ -3,8 +3,6 @@ FROM alpine:latest AS alpine
 RUN apk add linux-headers
 
 FROM rust:1.76.0
-# NB: We need debian stable to have the oldest possible glibc
-# otherwise cijail may not work on old distributions.
 
 # Get proper linux headers for libseccomp.
 COPY --from=alpine /usr/include /usr/include/alpine
