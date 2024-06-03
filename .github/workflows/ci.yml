@@ -24,6 +24,7 @@ jobs:
         https://files.pythonhosted.org/packages/
         https://static.crates.io/crates/
         https://index.crates.io/
+        https://github.com/rustsec/advisory-db
         https://uploads.github.com/repos/staex-io/cijail/releases/
         https://api.github.com/repos/staex-io/cijail/releases
     steps:
