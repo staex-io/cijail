@@ -39,7 +39,7 @@ RUN rustup target add --toolchain 1.76.0 \
     x86_64-unknown-linux-musl
 RUN rustup default 1.76.0-x86_64-unknown-linux-gnu
 RUN cargo install --quiet cargo-llvm-cov
-RUN cargo install --quiet cargo-deny
+RUN cargo install --quiet --no-default-features --features native-certs cargo-deny
 #RUN cargo install --quiet cargo-about
 
 RUN curl --location --silent --fail --output /usr/bin/shfmt https://github.com/mvdan/sh/releases/download/v3.8.0/shfmt_v3.8.0_linux_amd64 && \
