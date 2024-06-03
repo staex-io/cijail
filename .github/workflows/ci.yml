@@ -24,6 +24,7 @@ jobs:
         https://files.pythonhosted.org/packages/
         https://static.crates.io/crates/
         https://index.crates.io/
+        https://github.com/rustsec/advisory-db
         https://uploads.github.com/repos/staex-io/cijail/releases/
         https://api.github.com/repos/staex-io/cijail/releases
     steps:
@@ -33,10 +34,6 @@ jobs:
         run: ./ci/dns.sh
       - name: Lint
         run: cijail ./ci/lint.sh
-      - name: Cargo deny warm-up
-        run: cijail ./ci/cargo-deny-warm-up.sh
-      - name: Cargo deny
-        run: cargo deny check
       - name: Test
         run: ./ci/test.sh
       - name: Binaries
