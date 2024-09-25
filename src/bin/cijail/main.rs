@@ -1,7 +1,7 @@
 use std::ffi::c_int;
 use std::ffi::OsString;
-use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
+use std::os::fd::RawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Child;
 use std::process::Command;
@@ -29,6 +29,11 @@ use libseccomp::ScmpNotifRespFlags;
 use log::error;
 use log::info;
 use nix::sys::prctl::set_no_new_privs;
+use nix::sys::wait::waitpid;
+use nix::sys::wait::WaitStatus;
+use nix::unistd::fork;
+use nix::unistd::ForkResult;
+use nix::unistd::Pid;
 use passfd::FdPassingExt;
 use socketpair::socketpair_stream;
 use socketpair::SocketpairStream;
@@ -74,60 +79,53 @@ fn drop_capabilities() -> Result<(), CapsError> {
     Ok(())
 }
 
+fn exec_tracee(mut command: Command, socket: RawFd) -> Result<(), i32> {
+    drop_capabilities().map_err(|_| 1)?;
+    set_no_new_privs().map_err(|_| 1)?;
+    let notify_fd = install_seccomp_notify_filter().map_err(|_| KERNEL_TOO_OLD)?;
+    // allow the first `sendmsg` call
+    let tmp_thread = std::thread::spawn(move || -> Result<(), SeccompError> {
+        for _ in 0..1 {
+            let request = ScmpNotifReq::receive(notify_fd)?;
+            notify_id_valid(notify_fd, request.id)?;
+            let response = ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty());
+            response.respond(notify_fd)?;
+        }
+        Ok(())
+    });
+    // this is the first `sendmsg` call that we allow via the temporary thread above
+    socket.send_fd(notify_fd).map_err(|_| 1)?;
+    tmp_thread.join().map_err(|_| 1)?.map_err(|_| 1)?;
+    // file descriptors seem to close automatically
+    command.exec();
+    Err(EXEC_FAILED)
+}
+
 fn spawn_tracee_process(
     socket: SocketpairStream,
     mut args: Vec<OsString>,
     proxy_config: ProxyConfig,
-) -> Result<Child, Box<dyn std::error::Error>> {
+) -> Result<Pid, Box<dyn std::error::Error>> {
     if args.is_empty() {
         return Err("please specify the command to run".into());
     }
     let arg0 = args.remove(0);
-    let mut child = Command::new(arg0.clone());
-    child.args(args.clone());
-    proxy_config.setenv(&mut child);
-    unsafe {
-        let socket = socket.as_raw_fd();
-        child.pre_exec(move || {
-            drop_capabilities().map_err(|_| {
-                std::io::Error::new(ErrorKind::Other, "failed to drop capabilities")
-            })?;
-            set_no_new_privs()?;
-            let notify_fd = install_seccomp_notify_filter()?;
-            // allow the first `sendmsg` call
-            let tmp_thread = std::thread::spawn(move || -> Result<(), SeccompError> {
-                let request = ScmpNotifReq::receive(notify_fd)?;
-                notify_id_valid(notify_fd, request.id)?;
-                let response = ScmpNotifResp::new_continue(request.id, ScmpNotifRespFlags::empty());
-                response.respond(notify_fd)?;
-                Ok(())
-            });
-            // this is the first `sendmsg` call that we allow via the temporary thread above
-            socket.send_fd(notify_fd)?;
-            tmp_thread
-                .join()
-                .map_err(|_| Error::map("failed to join thread"))?
-                .map_err(Error::Seccomp)?;
-            // file descriptors seem to close automatically
-            Ok(())
-        })
-    };
-    let child = child.spawn().map_err(move |e| {
-        let args = [arg0.to_string_lossy()]
-            .into_iter()
-            .chain(args.iter().map(|x| x.to_string_lossy()))
-            .collect::<Vec<_>>()
-            .join(" ");
-        if e.kind() == ErrorKind::InvalidInput {
-            format!(
-                "failed to run `{}`: your kernel version is likely too old: must be at least 5.0.0 to support SECCOMP_FILTER_FLAG_NEW_LISTENER",
-                args
-            )
-        } else {
-            format!("failed to run `{}`: {}", args, e)
+    let mut command = Command::new(arg0.clone());
+    command.args(args.clone());
+    proxy_config.setenv(&mut command);
+    let socket = socket.as_raw_fd();
+    let child_pid = match unsafe { fork() } {
+        Ok(ForkResult::Parent { child }) => child,
+        Ok(ForkResult::Child) => {
+            let ret = match exec_tracee(command, socket) {
+                Ok(_) => 0,
+                Err(_) => EXEC_FAILED,
+            };
+            unsafe { libc::_exit(ret) }
         }
-    })?;
-    Ok(child)
+        Err(e) => return Err(format!("failed to fork: {}", e).into()),
+    };
+    Ok(child_pid)
 }
 
 fn spawn_tracer_process(
@@ -251,7 +249,8 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
     )?;
     allowed_endpoints.allow_socketaddr(proxy_config.http_url.socketaddr);
     allowed_endpoints.allow_socketaddr(proxy_config.https_url.socketaddr);
-    let mut tracee = spawn_tracee_process(socket0, args.command, proxy_config)?;
+    let tracee_args = args.command.clone();
+    let tracee = spawn_tracee_process(socket0, args.command, proxy_config)?;
     let mut tracer = spawn_tracer_process(
         socket1,
         &allowed_endpoints,
@@ -259,17 +258,38 @@ fn do_main() -> Result<ExitCode, Box<dyn std::error::Error>> {
         allow_loopback || args.allow_loopback,
         proxy.id(),
     )?;
-    let status = tracee.wait()?;
+    let status = waitpid(tracee, None)?;
     tracer.kill()?;
     tracer.wait()?;
     proxy.kill()?;
     proxy.wait()?;
-    Ok(match status.code() {
-        Some(code) => (if is_dry_run { 99 } else { code as u8 }).into(),
-        None => {
-            error!("terminated by signal");
+    Ok(match status {
+        WaitStatus::Exited(_, code) => {
+            if code == EXEC_FAILED || code == KERNEL_TOO_OLD {
+                let args = tracee_args
+                    .into_iter()
+                    .map(|x| x.to_string_lossy().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if code == EXEC_FAILED {
+                    error!("failed to execute `{}`: does the file exist?", args);
+                }
+                if code == KERNEL_TOO_OLD {
+                    error!(
+                        "failed to run `{}`: your kernel version is likely too old: \
+                        must be at least 5.0.0 to support SECCOMP_FILTER_FLAG_NEW_LISTENER",
+                        args
+                    )
+                }
+            }
+            (if is_dry_run { DRY_RUN } else { code as u8 }).into()
+        }
+        WaitStatus::Signaled(_, signal, _) => {
+            error!("terminated by {:?}", signal);
             ExitCode::FAILURE
         }
+        // should not be reachable
+        _ => ExitCode::FAILURE,
     })
 }
 
@@ -280,3 +300,7 @@ fn check(ret: c_int) -> Result<c_int, std::io::Error> {
         Ok(ret)
     }
 }
+
+const EXEC_FAILED: i32 = 111;
+const KERNEL_TOO_OLD: i32 = 88;
+const DRY_RUN: u8 = 99;

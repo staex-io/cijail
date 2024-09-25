@@ -61,7 +61,13 @@ pub(crate) fn main(
             &immutable_context,
             &mut mutable_context,
         ) {
-            Err(LoopError::Continue(e)) => {
+            Err(LoopError::Io(e)) => {
+                if e.kind() != ErrorKind::NotFound {
+                    return Err(e.into());
+                }
+                error!("continue after i/o error: {}", e);
+            }
+            Err(LoopError::Seccomp(e)) => {
                 if !matches!(
                     e.errno(),
                     Some(SeccompErrno::ECANCELED) | Some(SeccompErrno::ENOENT)
@@ -69,7 +75,7 @@ pub(crate) fn main(
                     error!("continue after seccomp error: {}", e);
                 }
             }
-            Err(LoopError::Break(e)) => {
+            Err(LoopError::Other(e)) => {
                 return Err(e);
             }
             Ok(_) => {}
@@ -482,43 +488,44 @@ impl ImmutableContext {
 }
 
 enum LoopError {
-    Break(Box<dyn std::error::Error>),
-    Continue(SeccompError),
+    Other(Box<dyn std::error::Error>),
+    Io(std::io::Error),
+    Seccomp(SeccompError),
 }
 
 impl From<std::fmt::Error> for LoopError {
     fn from(other: std::fmt::Error) -> Self {
-        Self::Break(other.into())
+        Self::Other(other.into())
     }
 }
 
 impl From<std::io::Error> for LoopError {
     fn from(other: std::io::Error) -> Self {
-        Self::Break(other.into())
+        Self::Io(other)
     }
 }
 
 impl From<Errno> for LoopError {
     fn from(other: Errno) -> Self {
-        Self::Break(other.into())
+        Self::Other(other.into())
     }
 }
 
 impl From<&str> for LoopError {
     fn from(other: &str) -> Self {
-        Self::Break(other.into())
+        Self::Other(other.into())
     }
 }
 
 impl From<String> for LoopError {
     fn from(other: String) -> Self {
-        Self::Break(other.into())
+        Self::Other(other.into())
     }
 }
 
 impl From<SeccompError> for LoopError {
     fn from(other: SeccompError) -> Self {
-        Self::Continue(other)
+        Self::Seccomp(other)
     }
 }
 
